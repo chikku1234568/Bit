@@ -1,0 +1,25 @@
+{
+  "name": "bit",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Bit — version control for Excel. M1: xlsx bridge.",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "roundtrip": "tsx scripts/roundtrip.ts"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
