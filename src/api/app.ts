@@ -1,0 +1,180 @@
+import Fastify, { type FastifyInstance } from 'fastify';
+import cors from '@fastify/cors';
+import multipart from '@fastify/multipart';
+import { BitStore } from '../store/store.js';
+import {
+  ProjectService,
+  NotFoundError,
+  ValidationError,
+} from '../service/projects.js';
+
+export interface BuildAppOptions {
+  dataDir: string;
+  logger?: boolean;
+}
+
+async function readUpload(
+  request: { file: () => Promise<any> },
+): Promise<{ fields: Record<string, string>; fileBuffer: Buffer | null; filename: string | null }> {
+  const fields: Record<string, string> = {};
+  let fileBuffer: Buffer | null = null;
+  let filename: string | null = null;
+
+  const parts = (request as any).parts
+    ? (request as any).parts()
+    : null;
+
+  if (parts) {
+    for await (const part of parts) {
+      if (part.type === 'file') {
+        const chunks: Buffer[] = [];
+        for await (const chunk of part.file) {
+          chunks.push(chunk as Buffer);
+        }
+        fileBuffer = Buffer.concat(chunks);
+        filename = part.filename ?? null;
+      } else {
+        fields[part.fieldname] = String(part.value ?? '');
+      }
+    }
+  } else {
+    // Fallback: single file() API + body fields if present
+    const data = await request.file();
+    if (data) {
+      const chunks: Buffer[] = [];
+      for await (const chunk of data.file) {
+        chunks.push(chunk as Buffer);
+      }
+      fileBuffer = Buffer.concat(chunks);
+      filename = data.filename ?? null;
+      for (const [key, val] of Object.entries(data.fields ?? {})) {
+        const v = val as { value?: unknown };
+        fields[key] = String(v?.value ?? '');
+      }
+    }
+  }
+
+  return { fields, fileBuffer, filename };
+}
+
+function authorFrom(request: { headers: Record<string, unknown> }, fields: Record<string, string>): string {
+  const header = request.headers['x-bit-author'];
+  if (typeof header === 'string' && header.trim()) return header.trim();
+  if (fields.author?.trim()) return fields.author.trim();
+  return 'demo-user';
+}
+
+export async function buildApp(opts: BuildAppOptions): Promise<{
+  app: FastifyInstance;
+  store: BitStore;
+  service: ProjectService;
+}> {
+  const store = new BitStore(opts.dataDir);
+  await store.init();
+  const service = new ProjectService(store);
+
+  const app = Fastify({ logger: opts.logger ?? false });
+  await app.register(cors, { origin: true });
+  await app.register(multipart, {
+    limits: { fileSize: 50 * 1024 * 1024 },
+  });
+
+  app.setErrorHandler((err, _req, reply) => {
+    if (err instanceof NotFoundError) {
+      return reply.status(404).send({ error: err.message });
+    }
+    if (err instanceof ValidationError) {
+      return reply.status(400).send({ error: err.message });
+    }
+    app.log.error(err);
+    return reply.status(500).send({ error: 'Internal server error' });
+  });
+
+  app.get('/health', async () => ({ ok: true }));
+
+  app.get('/projects', async () => {
+    return service.listProjects();
+  });
+
+  app.post('/projects', async (request, reply) => {
+    const { fields, fileBuffer, filename } = await readUpload(request as any);
+    if (!fileBuffer || !filename) {
+      throw new ValidationError('Upload an .xlsx file to create a project');
+    }
+    if (!filename.toLowerCase().endsWith('.xlsx')) {
+      throw new ValidationError('File must be .xlsx');
+    }
+    const name =
+      fields.name?.trim() ||
+      filename.replace(/\.xlsx$/i, '') ||
+      'Untitled project';
+    const detail = await service.createProject({
+      name,
+      author: authorFrom(request as any, fields),
+      message: fields.message,
+      xlsxBuffer: fileBuffer,
+    });
+    return reply.status(201).send(detail);
+  });
+
+  app.get<{ Params: { id: string } }>('/projects/:id', async (request) => {
+    return service.getProject(request.params.id);
+  });
+
+  app.get<{ Params: { id: string } }>('/projects/:id/versions', async (request) => {
+    return service.listVersions(request.params.id);
+  });
+
+  app.post<{ Params: { id: string } }>('/projects/:id/versions', async (request, reply) => {
+    const { fields, fileBuffer, filename } = await readUpload(request as any);
+    if (!fileBuffer || !filename) {
+      throw new ValidationError('Upload an .xlsx file to save a version');
+    }
+    if (!filename.toLowerCase().endsWith('.xlsx')) {
+      throw new ValidationError('File must be .xlsx');
+    }
+    const version = await service.saveVersion({
+      projectId: request.params.id,
+      author: authorFrom(request as any, fields),
+      message: fields.message || 'Saved version',
+      xlsxBuffer: fileBuffer,
+    });
+    return reply.status(201).send(version);
+  });
+
+  app.post<{ Params: { id: string } }>('/scenarios/:id/versions', async (request, reply) => {
+    const { fields, fileBuffer, filename } = await readUpload(request as any);
+    if (!fileBuffer || !filename) {
+      throw new ValidationError('Upload an .xlsx file to save a version');
+    }
+    if (!filename.toLowerCase().endsWith('.xlsx')) {
+      throw new ValidationError('File must be .xlsx');
+    }
+    // Resolve scenario → project
+    const meta = await store.readMeta();
+    const scenario = meta.scenarios.find((s) => s.id === request.params.id);
+    if (!scenario) throw new NotFoundError(`Scenario not found: ${request.params.id}`);
+    const version = await service.saveVersion({
+      projectId: scenario.projectId,
+      scenarioId: scenario.id,
+      author: authorFrom(request as any, fields),
+      message: fields.message || 'Saved version',
+      xlsxBuffer: fileBuffer,
+    });
+    return reply.status(201).send(version);
+  });
+
+  app.get<{ Params: { id: string } }>('/versions/:id', async (request) => {
+    return service.getVersion(request.params.id);
+  });
+
+  app.get<{ Params: { id: string } }>('/versions/:id/xlsx', async (request, reply) => {
+    const { buffer, filename } = await service.getVersionXlsx(request.params.id);
+    return reply
+      .header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+      .header('Content-Disposition', `attachment; filename="${filename}"`)
+      .send(buffer);
+  });
+
+  return { app, store, service };
+}
