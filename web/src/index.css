@@ -202,3 +202,9 @@ button:disabled {
   gap: 1rem;
   align-items: flex-end;
 }
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}

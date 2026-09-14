@@ -155,3 +155,105 @@ export async function getDiff(base: string, compare: string): Promise<DiffResult
   const qs = new URLSearchParams({ base, compare });
   return json(await fetch(`${API_BASE}/diff?${qs}`));
 }
+
+export type ReviewStatus = 'open' | 'changes-requested' | 'combined' | 'closed';
+
+export interface Review {
+  id: string;
+  projectId: string;
+  scenarioId: string;
+  baseVersionId: string;
+  compareVersionId: string;
+  author: string;
+  note?: string;
+  status: ReviewStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CellConflict {
+  sheet: string;
+  address: string;
+  base: unknown;
+  ours: unknown;
+  theirs: unknown;
+  reason: string;
+}
+
+export async function createReview(opts: {
+  scenarioId: string;
+  note?: string;
+}): Promise<Review> {
+  return json(
+    await fetch(`${API_BASE}/scenarios/${opts.scenarioId}/reviews`, {
+      method: 'POST',
+      headers: { ...authorHeader(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ note: opts.note, author: getAuthor() }),
+    }),
+  );
+}
+
+export async function listReviews(projectId: string): Promise<Review[]> {
+  return json(await fetch(`${API_BASE}/projects/${projectId}/reviews`));
+}
+
+export async function getReview(id: string): Promise<Review> {
+  return json(await fetch(`${API_BASE}/reviews/${id}`));
+}
+
+export async function getMergePreview(opts: {
+  base: string;
+  ours: string;
+  theirs: string;
+}): Promise<{
+  conflictCount: number;
+  conflicts: CellConflict[];
+  autoChangeCount: number;
+}> {
+  const qs = new URLSearchParams(opts);
+  return json(await fetch(`${API_BASE}/merge?${qs}`));
+}
+
+export async function combineReview(opts: {
+  reviewId: string;
+  message?: string;
+  resolutions?: Record<string, { action: string; cell?: unknown }>;
+}): Promise<{ review: Review; version: Version }> {
+  return json(
+    await fetch(`${API_BASE}/reviews/${opts.reviewId}/combine`, {
+      method: 'POST',
+      headers: { ...authorHeader(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: opts.message,
+        resolutions: opts.resolutions,
+        author: getAuthor(),
+      }),
+    }),
+  );
+}
+
+export async function requestReviewChanges(opts: {
+  reviewId: string;
+  note?: string;
+}): Promise<Review> {
+  return json(
+    await fetch(`${API_BASE}/reviews/${opts.reviewId}/request-changes`, {
+      method: 'POST',
+      headers: { ...authorHeader(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ note: opts.note }),
+    }),
+  );
+}
+
+export async function closeReview(opts: {
+  reviewId: string;
+  note?: string;
+}): Promise<Review> {
+  return json(
+    await fetch(`${API_BASE}/reviews/${opts.reviewId}/close`, {
+      method: 'POST',
+      headers: { ...authorHeader(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ note: opts.note }),
+    }),
+  );
+}

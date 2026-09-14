@@ -456,3 +456,230 @@ describe('M4 Diff API', () => {
     expect(bad.statusCode).toBe(400);
   });
 });
+
+describe('M6 Review + Combine', () => {
+  let dataDir: string;
+  let store: BitStore;
+  let service: ProjectService;
+
+  beforeEach(async () => {
+    dataDir = await mkdtemp(join(tmpdir(), 'bit-m6-'));
+    store = new BitStore(dataDir);
+    await store.init();
+    service = new ProjectService(store);
+  });
+
+  afterEach(async () => {
+    await rm(dataDir, { recursive: true, force: true });
+  });
+
+  it('clean combine → Main version with two parents', async () => {
+    const project = await service.createProject({
+      name: 'Review Budget',
+      author: 'Alex',
+      message: 'Initial',
+      xlsxBuffer: await writeXlsx(budgetSnapshot()),
+    });
+    const mainTip = project.tipVersion!.id;
+    const scenario = await service.createScenario({
+      projectId: project.id,
+      name: 'Tax update',
+      author: 'Jordan',
+    });
+    const scenVer = await service.saveVersion({
+      projectId: project.id,
+      scenarioId: scenario.id,
+      author: 'Jordan',
+      message: 'Tax bump',
+      xlsxBuffer: await writeXlsx(
+        budgetSnapshot({
+          B2: { v: 1500, f: null, fmt: { numFmt: '#,##0.00' } },
+        }),
+      ),
+    });
+
+    const review = await service.createReview({
+      scenarioId: scenario.id,
+      author: 'Jordan',
+      note: 'Please review tax',
+    });
+    expect(review.baseVersionId).toBe(mainTip);
+    expect(review.compareVersionId).toBe(scenVer.id);
+
+    const { version, review: combined } = await service.combineReview({
+      reviewId: review.id,
+      author: 'Alex',
+      message: 'Combined tax update',
+    });
+    expect(combined.status).toBe('combined');
+    expect(version.parentIds).toEqual([mainTip, scenVer.id]);
+    expect(version.scenarioId).toBe(project.mainScenarioId);
+    const refreshed = await service.getProject(project.id);
+    expect(refreshed.main.tipVersionId).toBe(version.id);
+  });
+
+  it('conflict without resolutions throws ConflictError', async () => {
+    const { ConflictError } = await import('./projects.js');
+    const project = await service.createProject({
+      name: 'Conflict',
+      author: 'Alex',
+      xlsxBuffer: await writeXlsx(budgetSnapshot({ B2: { v: 1000, f: null } })),
+    });
+    const scenario = await service.createScenario({
+      projectId: project.id,
+      name: 'Alt',
+    });
+    await service.saveVersion({
+      projectId: project.id,
+      scenarioId: scenario.id,
+      author: 'Jordan',
+      message: 'Scenario 1111',
+      xlsxBuffer: await writeXlsx(budgetSnapshot({ B2: { v: 1111, f: null } })),
+    });
+    const review = await service.createReview({
+      scenarioId: scenario.id,
+      author: 'Jordan',
+    });
+    // Main moves after review opened → overlapping edit
+    await service.saveVersion({
+      projectId: project.id,
+      author: 'Alex',
+      message: 'Main 2222',
+      xlsxBuffer: await writeXlsx(budgetSnapshot({ B2: { v: 2222, f: null } })),
+    });
+
+    await expect(
+      service.combineReview({ reviewId: review.id, author: 'Alex' }),
+    ).rejects.toBeInstanceOf(ConflictError);
+  });
+
+  it('conflict with resolutions applied → combine succeeds', async () => {
+    const project = await service.createProject({
+      name: 'Resolve',
+      author: 'Alex',
+      xlsxBuffer: await writeXlsx(budgetSnapshot({ B2: { v: 1000, f: null } })),
+    });
+    const scenario = await service.createScenario({
+      projectId: project.id,
+      name: 'Alt',
+    });
+    const scenVer = await service.saveVersion({
+      projectId: project.id,
+      scenarioId: scenario.id,
+      author: 'Jordan',
+      message: 'Scenario 1111',
+      xlsxBuffer: await writeXlsx(budgetSnapshot({ B2: { v: 1111, f: null } })),
+    });
+    const review = await service.createReview({
+      scenarioId: scenario.id,
+      author: 'Jordan',
+    });
+    await service.saveVersion({
+      projectId: project.id,
+      author: 'Alex',
+      message: 'Main 2222',
+      xlsxBuffer: await writeXlsx(budgetSnapshot({ B2: { v: 2222, f: null } })),
+    });
+
+    const { version } = await service.combineReview({
+      reviewId: review.id,
+      author: 'Alex',
+      resolutions: {
+        'Budget!B2': { action: 'keep-theirs' },
+      },
+    });
+    expect(version.parentIds).toHaveLength(2);
+    expect(version.parentIds).toContain(scenVer.id);
+    const snap = await service.getVersionSnapshot(version.id);
+    expect(snap.sheets.Budget.cells.B2.v).toBe(1111);
+  });
+
+  it('cannot ask for review from Main', async () => {
+    const project = await service.createProject({
+      name: 'NoMainReview',
+      author: 'Alex',
+      xlsxBuffer: await writeXlsx(budgetSnapshot()),
+    });
+    await expect(
+      service.createReview({ scenarioId: project.mainScenarioId, author: 'Alex' }),
+    ).rejects.toThrow(/Main/i);
+  });
+});
+
+describe('M6 API', () => {
+  let dataDir: string;
+  let app: Awaited<ReturnType<typeof buildApp>>['app'];
+
+  beforeEach(async () => {
+    dataDir = await mkdtemp(join(tmpdir(), 'bit-m6-api-'));
+    const built = await buildApp({ dataDir, logger: false });
+    app = built.app;
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    await app.close();
+    await rm(dataDir, { recursive: true, force: true });
+  });
+
+  it('HTTP ask for review + combine', async () => {
+    const buf = await writeXlsx(budgetSnapshot());
+    const createMp = multipartPayload(
+      { name: 'M6 API', author: 'Alex', message: 'Start' },
+      { field: 'file', filename: 'b.xlsx', buffer: buf },
+    );
+    const project = (
+      await app.inject({
+        method: 'POST',
+        url: '/projects',
+        headers: { 'content-type': createMp.contentType },
+        payload: createMp.payload,
+      })
+    ).json();
+
+    const scenario = (
+      await app.inject({
+        method: 'POST',
+        url: `/projects/${project.id}/scenarios`,
+        headers: { 'content-type': 'application/json' },
+        payload: JSON.stringify({ name: 'Tax update' }),
+      })
+    ).json();
+
+    const v2Buf = await writeXlsx(
+      budgetSnapshot({
+        B2: { v: 1600, f: null, fmt: { numFmt: '#,##0.00' } },
+      }),
+    );
+    const saveMp = multipartPayload(
+      { message: 'Scenario save', author: 'Jordan' },
+      { field: 'file', filename: 's.xlsx', buffer: v2Buf },
+    );
+    await app.inject({
+      method: 'POST',
+      url: `/scenarios/${scenario.id}/versions`,
+      headers: { 'content-type': saveMp.contentType },
+      payload: saveMp.payload,
+    });
+
+    const reviewRes = await app.inject({
+      method: 'POST',
+      url: `/scenarios/${scenario.id}/reviews`,
+      headers: { 'content-type': 'application/json', 'x-bit-author': 'Jordan' },
+      payload: JSON.stringify({ note: 'Please look' }),
+    });
+    expect(reviewRes.statusCode).toBe(201);
+    const review = reviewRes.json();
+
+    const combineRes = await app.inject({
+      method: 'POST',
+      url: `/reviews/${review.id}/combine`,
+      headers: { 'content-type': 'application/json', 'x-bit-author': 'Alex' },
+      payload: JSON.stringify({ message: 'Looks good' }),
+    });
+    expect(combineRes.statusCode).toBe(200);
+    const body = combineRes.json();
+    expect(body.review.status).toBe('combined');
+    expect(body.version.parentIds).toHaveLength(2);
+  });
+});

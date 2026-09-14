@@ -43,3 +43,20 @@ export interface ProjectDetail extends Project {
 export interface VersionListItem extends Version {
   scenarioName: string;
 }
+
+export type ReviewStatus = 'open' | 'changes-requested' | 'combined' | 'closed';
+
+export interface Review {
+  id: string;
+  projectId: string;
+  scenarioId: string;
+  /** Main tip frozen when review opened. */
+  baseVersionId: string;
+  /** Scenario tip frozen when review opened. */
+  compareVersionId: string;
+  author: string;
+  note?: string;
+  status: ReviewStatus;
+  createdAt: string;
+  updatedAt: string;
+}

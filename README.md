@@ -1,6 +1,6 @@
-# Bit — M5 Merge engine
+# Bit — M6 Review + Combine
 
-Version control for Excel. **M5** adds a pure three-way merge engine and preview API.
+Version control for Excel. **M6** adds Ask for review, Needs a decision, and Combine into Main.
 
 Practical onboarding: see **[BIT-GUIDE.md](BIT-GUIDE.md)**.
 
@@ -36,7 +36,8 @@ Open `http://127.0.0.1:5173`.
 3. Open the project — see Main tip and version history.
 4. **Create scenario**, then **Switch scenario**.
 5. Edit in Excel, **Save version** on the selected scenario (Main tip stays put).
-6. **Download .xlsx** for any version tip.
+6. On a scenario, **Ask for review** → open Review → **Combine into Main** (resolve **Needs a decision** if any).
+7. **Download .xlsx** for the new Main tip.
 
 Optional env:
 
@@ -60,7 +61,7 @@ The UI stores the name in `localStorage` (`bit-author`). Invite / two-user is M7
 npm test
 ```
 
-Includes M1–M5: xlsx, versions, scenarios, diff, and merge engine tests.
+Includes M1–M6: xlsx, versions, scenarios, diff, merge, and review/combine tests.
 
 ## Round-trip CLI (M1)
 
@@ -83,7 +84,7 @@ data/              # Runtime store (gitignored)
 fixtures/          # Sample budget workbook
 ```
 
-## API (M5)
+## API (M6)
 
 | Method | Path | Purpose |
 |--------|------|---------|
@@ -100,6 +101,12 @@ fixtures/          # Sample budget workbook
 | GET | `/versions/:id/xlsx` | Download export |
 | GET | `/diff?base=&compare=` | Cell/sheet diff between versions |
 | GET | `/merge?base=&ours=&theirs=` | Merge preview (conflicts, no write) |
+| POST | `/scenarios/:id/reviews` | Ask for review (freeze base/compare) |
+| GET | `/projects/:id/reviews` | List reviews |
+| GET | `/reviews/:id` | Review detail |
+| POST | `/reviews/:id/combine` | Combine into Main (resolutions) |
+| POST | `/reviews/:id/request-changes` | Request changes |
+| POST | `/reviews/:id/close` | Close review |
 
 ## Fidelity bar (tracked)
 
@@ -109,7 +116,7 @@ fixtures/          # Sample budget workbook
 
 ## Out of scope (later milestones)
 
-Review + Combine (M6), invite / two-user E2E (M7).
+E2E demo script (M7).
 
 ## Design
 

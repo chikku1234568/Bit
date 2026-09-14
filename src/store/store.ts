@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile, readdir, access } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { WorkbookSnapshot } from '../xlsx/types.js';
-import type { Project, Scenario, Version } from '../domain/types.js';
+import type { Project, Scenario, Version, Review } from '../domain/types.js';
 
 export interface StorePaths {
   root: string;
@@ -15,10 +15,11 @@ export interface MetaDb {
   projects: Project[];
   scenarios: Scenario[];
   versions: Version[];
+  reviews: Review[];
 }
 
 function emptyMeta(): MetaDb {
-  return { projects: [], scenarios: [], versions: [] };
+  return { projects: [], scenarios: [], versions: [], reviews: [] };
 }
 
 export function hashSnapshot(snapshot: WorkbookSnapshot): string {
@@ -50,7 +51,9 @@ export class BitStore {
 
   async readMeta(): Promise<MetaDb> {
     const raw = await readFile(this.paths.meta, 'utf8');
-    return JSON.parse(raw) as MetaDb;
+    const parsed = JSON.parse(raw) as MetaDb;
+    if (!parsed.reviews) parsed.reviews = [];
+    return parsed;
   }
 
   async writeMeta(meta: MetaDb): Promise<void> {

@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
+  createReview,
   createScenario,
   downloadVersionUrl,
   getProject,
+  listReviews,
   listVersions,
   saveVersion,
   type ProjectDetail,
+  type Review,
   type Scenario,
   type Version,
 } from '../api';
@@ -22,13 +25,15 @@ export function ProjectPage() {
   const [message, setMessage] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [newScenarioName, setNewScenarioName] = useState('');
+  const [reviews, setReviews] = useState<Review[]>([]);
 
   const refresh = useCallback(async () => {
     if (!id) return;
     try {
-      const [p, v] = await Promise.all([getProject(id), listVersions(id)]);
+      const [p, v, r] = await Promise.all([getProject(id), listVersions(id), listReviews(id)]);
       setProject(p);
       setVersions(v);
+      setReviews(r);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -242,6 +247,58 @@ export function ProjectPage() {
           </button>
         </form>
       </section>
+
+
+      {!selectedScenario?.isMain ? (
+        <section className="card">
+          <h2>Ask for review</h2>
+          <p className="muted">
+            Request that Main take changes from <strong>{selectedScenario?.name}</strong>.
+          </p>
+          <button
+            type="button"
+            className="button"
+            disabled={busy}
+            onClick={() => {
+              if (!selectedScenario) return;
+              setBusy(true);
+              setError(null);
+              void createReview({ scenarioId: selectedScenario.id })
+                .then((rev) => {
+                  navigate(`/reviews/${rev.id}`);
+                })
+                .catch((err) => {
+                  setError(err instanceof Error ? err.message : String(err));
+                })
+                .finally(() => setBusy(false));
+            }}
+          >
+            Ask for review
+          </button>
+        </section>
+      ) : null}
+
+      {reviews.length > 0 ? (
+        <section className="card">
+          <h2>Reviews</h2>
+          <ul className="list">
+            {reviews.map((r) => (
+              <li key={r.id}>
+                <div>
+                  <strong>{r.status}</strong>
+                  <div className="muted">
+                    {r.author} · {new Date(r.createdAt).toLocaleString()}
+                    {r.note ? ` · ${r.note}` : ''}
+                  </div>
+                </div>
+                <Link className="button secondary" to={`/reviews/${r.id}`}>
+                  Open
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       <section className="card">
         <h2>Version history</h2>

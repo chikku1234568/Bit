@@ -28,8 +28,8 @@ Reset store: delete `./data/` (gitignored). Meta + blobs + cached `.xlsx` live t
 | **M3** | Create scenario, switch, save on scenario | Done |
 | **M4** | What changed (diff) | Done |
 | **M5** | Three-way merge engine + preview API | Done |
-| **M6** | Ask for review, Needs a decision, Combine into Main | Next |
-| **M7** | Two-user E2E demo script (Alex/Jordan) | — |
+| **M6** | Ask for review, Needs a decision, Combine into Main | Done |
+| **M7** | Two-user E2E demo script (Alex/Jordan) | Next |
 
 ## Key paths
 

@@ -1,6 +1,11 @@
 import type { WorkbookSnapshot } from '../xlsx/types.js';
 import { diffSnapshots, type DiffResult } from '../diff/diff.js';
-import { mergeSnapshots, type MergeResult } from '../merge/merge.js';
+import {
+  mergeSnapshots,
+  applyResolutions,
+  type MergeResult,
+  type ResolutionChoice,
+} from '../merge/merge.js';
 import { parseXlsx, writeXlsx } from '../xlsx/index.js';
 import type {
   Project,
@@ -8,6 +13,7 @@ import type {
   Scenario,
   Version,
   VersionListItem,
+  Review,
 } from '../domain/types.js';
 import type { BitStore } from '../store/store.js';
 
@@ -22,6 +28,13 @@ export class ValidationError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'ValidationError';
+  }
+}
+
+export class ConflictError extends Error {
+  constructor(message: string, public readonly details?: unknown) {
+    super(message);
+    this.name = 'ConflictError';
   }
 }
 
@@ -326,5 +339,146 @@ export class ProjectService {
       theirsId: opts.theirsId,
     };
   }
-}
 
+  async createReview(opts: {
+    scenarioId: string;
+    author: string;
+    note?: string;
+  }): Promise<Review> {
+    const meta = await this.store.readMeta();
+    const scenario = meta.scenarios.find((s) => s.id === opts.scenarioId);
+    if (!scenario) throw new NotFoundError(`Scenario not found: ${opts.scenarioId}`);
+    if (scenario.isMain) {
+      throw new ValidationError('Cannot ask for review from Main — create a scenario first');
+    }
+    const project = meta.projects.find((p) => p.id === scenario.projectId);
+    if (!project) throw new NotFoundError(`Project not found: ${scenario.projectId}`);
+    const main = meta.scenarios.find((s) => s.id === project.mainScenarioId);
+    if (!main?.tipVersionId) throw new ValidationError('Main has no tip version');
+    if (!scenario.tipVersionId) throw new ValidationError('Scenario has no tip version');
+
+    const now = new Date().toISOString();
+    const review: Review = {
+      id: this.store.newId(),
+      projectId: scenario.projectId,
+      scenarioId: scenario.id,
+      baseVersionId: main.tipVersionId,
+      compareVersionId: scenario.tipVersionId,
+      author: opts.author.trim() || 'anonymous',
+      note: opts.note?.trim() || undefined,
+      status: 'open',
+      createdAt: now,
+      updatedAt: now,
+    };
+    meta.reviews.push(review);
+    await this.store.writeMeta(meta);
+    return review;
+  }
+
+  async listReviews(projectId: string): Promise<Review[]> {
+    const meta = await this.store.readMeta();
+    const project = meta.projects.find((p) => p.id === projectId);
+    if (!project) throw new NotFoundError(`Project not found: ${projectId}`);
+    return meta.reviews
+      .filter((r) => r.projectId === projectId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  async getReview(reviewId: string): Promise<Review> {
+    const meta = await this.store.readMeta();
+    const review = meta.reviews.find((r) => r.id === reviewId);
+    if (!review) throw new NotFoundError(`Review not found: ${reviewId}`);
+    return review;
+  }
+
+  async updateReviewStatus(
+    reviewId: string,
+    status: 'changes-requested' | 'closed',
+    note?: string,
+  ): Promise<Review> {
+    const meta = await this.store.readMeta();
+    const review = meta.reviews.find((r) => r.id === reviewId);
+    if (!review) throw new NotFoundError(`Review not found: ${reviewId}`);
+    if (review.status === 'combined') {
+      throw new ValidationError('Review already combined');
+    }
+    review.status = status;
+    review.updatedAt = new Date().toISOString();
+    if (note?.trim()) review.note = note.trim();
+    await this.store.writeMeta(meta);
+    return review;
+  }
+
+  async combineReview(opts: {
+    reviewId: string;
+    author: string;
+    message?: string;
+    resolutions?: Record<string, ResolutionChoice>;
+  }): Promise<{ review: Review; version: Version; merge: MergeResult }> {
+    const meta = await this.store.readMeta();
+    const review = meta.reviews.find((r) => r.id === opts.reviewId);
+    if (!review) throw new NotFoundError(`Review not found: ${opts.reviewId}`);
+    if (review.status === 'combined') {
+      throw new ValidationError('Review already combined');
+    }
+    if (review.status === 'closed') {
+      throw new ValidationError('Review is closed');
+    }
+
+    const project = meta.projects.find((p) => p.id === review.projectId);
+    if (!project) throw new NotFoundError(`Project not found: ${review.projectId}`);
+    const main = meta.scenarios.find((s) => s.id === project.mainScenarioId);
+    if (!main) throw new NotFoundError('Main scenario missing');
+
+    const baseVer = meta.versions.find((v) => v.id === review.baseVersionId);
+    const compareVer = meta.versions.find((v) => v.id === review.compareVersionId);
+    // Ours = current Main tip (or frozen base); design: Ours = Main tip, Theirs = scenario tip
+    const mainTipId = main.tipVersionId ?? review.baseVersionId;
+    const oursVer = meta.versions.find((v) => v.id === mainTipId) ?? baseVer;
+    if (!baseVer || !compareVer || !oursVer) {
+      throw new NotFoundError('Review versions missing');
+    }
+
+    const [baseSnap, oursSnap, theirsSnap] = await Promise.all([
+      this.store.getSnapshot(baseVer.snapshotHash),
+      this.store.getSnapshot(oursVer.snapshotHash),
+      this.store.getSnapshot(compareVer.snapshotHash),
+    ]);
+
+    let merge = mergeSnapshots(baseSnap, oursSnap, theirsSnap);
+    if (opts.resolutions && Object.keys(opts.resolutions).length > 0) {
+      merge = applyResolutions(merge, opts.resolutions);
+    }
+    if (merge.conflicts.length > 0) {
+      throw new ConflictError('Needs a decision on conflicting cells before combine', {
+        conflictCount: merge.conflicts.length,
+        conflicts: merge.conflicts,
+      });
+    }
+
+    const snapshotHash = await this.store.putSnapshot(merge.snapshot);
+    const now = new Date().toISOString();
+    const versionId = this.store.newId();
+    const version: Version = {
+      id: versionId,
+      projectId: review.projectId,
+      scenarioId: main.id,
+      parentIds: [mainTipId, review.compareVersionId],
+      author: opts.author.trim() || 'anonymous',
+      timestamp: now,
+      message: (opts.message ?? 'Combined into Main').trim() || 'Combined into Main',
+      snapshotHash,
+    };
+
+    const exportBuf = await writeXlsx(merge.snapshot);
+    await this.store.putXlsxArtefact(versionId, exportBuf);
+
+    main.tipVersionId = versionId;
+    meta.versions.push(version);
+    review.status = 'combined';
+    review.updatedAt = now;
+    await this.store.writeMeta(meta);
+
+    return { review, version, merge };
+  }
+}
