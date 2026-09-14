@@ -210,5 +210,14 @@ export async function buildApp(opts: BuildAppOptions): Promise<{
     return service.diffVersions(base, compare);
   });
 
+
+  app.get<{ Querystring: { base?: string; ours?: string; theirs?: string } }>('/merge', async (request) => {
+    const { base, ours, theirs } = request.query;
+    if (!base || !ours || !theirs) {
+      throw new ValidationError('Query params base, ours, and theirs are required');
+    }
+    return service.previewMerge({ baseId: base, oursId: ours, theirsId: theirs });
+  });
+
   return { app, store, service };
 }

@@ -1,6 +1,6 @@
-# Bit — M4 What changed
+# Bit — M5 Merge engine
 
-Version control for Excel. **M4** adds **What changed** (pure snapshot diff + API + UI) on top of scenarios.
+Version control for Excel. **M5** adds a pure three-way merge engine and preview API.
 
 Practical onboarding: see **[BIT-GUIDE.md](BIT-GUIDE.md)**.
 
@@ -60,7 +60,7 @@ The UI stores the name in `localStorage` (`bit-author`). Invite / two-user is M7
 npm test
 ```
 
-Includes M1–M4: xlsx, versions, scenarios, and What changed diff tests.
+Includes M1–M5: xlsx, versions, scenarios, diff, and merge engine tests.
 
 ## Round-trip CLI (M1)
 
@@ -76,13 +76,14 @@ src/domain/        # Project, Version, Scenario (Main)
 src/store/         # Local demo store: data/meta.json + blobs/ + xlsx/
 src/service/       # ProjectService
 src/diff/          # Pure snapshot diff (M4)
+src/merge/         # Pure three-way merge (M5)
 src/api/           # Fastify HTTP API
 web/               # Vite + React UI (Home, Project)
 data/              # Runtime store (gitignored)
 fixtures/          # Sample budget workbook
 ```
 
-## API (M4)
+## API (M5)
 
 | Method | Path | Purpose |
 |--------|------|---------|
@@ -98,6 +99,7 @@ fixtures/          # Sample budget workbook
 | GET | `/versions/:id` | Version metadata |
 | GET | `/versions/:id/xlsx` | Download export |
 | GET | `/diff?base=&compare=` | Cell/sheet diff between versions |
+| GET | `/merge?base=&ours=&theirs=` | Merge preview (conflicts, no write) |
 
 ## Fidelity bar (tracked)
 
@@ -107,7 +109,7 @@ fixtures/          # Sample budget workbook
 
 ## Out of scope (later milestones)
 
-Merge (M5), review (M6), invite / two-user E2E (M7).
+Review + Combine (M6), invite / two-user E2E (M7).
 
 ## Design
 

@@ -1,5 +1,6 @@
 import type { WorkbookSnapshot } from '../xlsx/types.js';
 import { diffSnapshots, type DiffResult } from '../diff/diff.js';
+import { mergeSnapshots, type MergeResult } from '../merge/merge.js';
 import { parseXlsx, writeXlsx } from '../xlsx/index.js';
 import type {
   Project,
@@ -286,4 +287,44 @@ export class ProjectService {
     const result = diffSnapshots(baseSnap, compareSnap);
     return { ...result, baseId, compareId };
   }
+
+  async previewMerge(opts: {
+    baseId: string;
+    oursId: string;
+    theirsId: string;
+  }): Promise<{
+    conflictCount: number;
+    conflicts: MergeResult['conflicts'];
+    autoChangeCount: number;
+    baseId: string;
+    oursId: string;
+    theirsId: string;
+  }> {
+    const meta = await this.store.readMeta();
+    const base = meta.versions.find((v) => v.id === opts.baseId);
+    const ours = meta.versions.find((v) => v.id === opts.oursId);
+    const theirs = meta.versions.find((v) => v.id === opts.theirsId);
+    if (!base) throw new NotFoundError(`Version not found: ${opts.baseId}`);
+    if (!ours) throw new NotFoundError(`Version not found: ${opts.oursId}`);
+    if (!theirs) throw new NotFoundError(`Version not found: ${opts.theirsId}`);
+    const projectIds = new Set([base.projectId, ours.projectId, theirs.projectId]);
+    if (projectIds.size !== 1) {
+      throw new ValidationError('Versions must belong to the same project');
+    }
+    const [baseSnap, oursSnap, theirsSnap] = await Promise.all([
+      this.store.getSnapshot(base.snapshotHash),
+      this.store.getSnapshot(ours.snapshotHash),
+      this.store.getSnapshot(theirs.snapshotHash),
+    ]);
+    const result = mergeSnapshots(baseSnap, oursSnap, theirsSnap);
+    return {
+      conflictCount: result.conflicts.length,
+      conflicts: result.conflicts,
+      autoChangeCount: result.autoChangeCount,
+      baseId: opts.baseId,
+      oursId: opts.oursId,
+      theirsId: opts.theirsId,
+    };
+  }
 }
+
