@@ -35,13 +35,71 @@ export class ProjectService {
     const meta = await this.store.readMeta();
     const project = meta.projects.find((p) => p.id === id);
     if (!project) throw new NotFoundError(`Project not found: ${id}`);
-    const scenarios = meta.scenarios.filter((s) => s.projectId === id);
+    const scenarios = await this.listScenarios(id);
     const main = scenarios.find((s) => s.id === project.mainScenarioId);
     if (!main) throw new NotFoundError(`Main scenario missing for project ${id}`);
     const tipVersion = main.tipVersionId
       ? meta.versions.find((v) => v.id === main.tipVersionId) ?? null
       : null;
     return { ...project, main, scenarios, tipVersion };
+  }
+
+
+  async listScenarios(projectId: string): Promise<Scenario[]> {
+    const meta = await this.store.readMeta();
+    const project = meta.projects.find((p) => p.id === projectId);
+    if (!project) throw new NotFoundError(`Project not found: ${projectId}`);
+    const scenarios = meta.scenarios.filter((s) => s.projectId === projectId);
+    const main = scenarios.find((s) => s.id === project.mainScenarioId);
+    const rest = scenarios
+      .filter((s) => s.id !== project.mainScenarioId)
+      .sort((a, b) => a.name.localeCompare(b.name));
+    return main ? [main, ...rest] : rest;
+  }
+
+  async getScenario(scenarioId: string): Promise<Scenario> {
+    const meta = await this.store.readMeta();
+    const scenario = meta.scenarios.find((s) => s.id === scenarioId);
+    if (!scenario) throw new NotFoundError(`Scenario not found: ${scenarioId}`);
+    return scenario;
+  }
+
+  async createScenario(opts: {
+    projectId: string;
+    name: string;
+    author?: string;
+  }): Promise<Scenario> {
+    const name = opts.name.trim();
+    if (!name) throw new ValidationError('Scenario name is required');
+    if (name.toLowerCase() === 'main') {
+      throw new ValidationError('Cannot name a scenario "Main"');
+    }
+
+    const meta = await this.store.readMeta();
+    const project = meta.projects.find((p) => p.id === opts.projectId);
+    if (!project) throw new NotFoundError(`Project not found: ${opts.projectId}`);
+
+    const existing = meta.scenarios.filter((s) => s.projectId === opts.projectId);
+    if (existing.some((s) => s.name.toLowerCase() === name.toLowerCase())) {
+      throw new ValidationError(`Scenario name already used: ${name}`);
+    }
+
+    const main = existing.find((s) => s.id === project.mainScenarioId);
+    if (!main) throw new NotFoundError(`Main scenario missing for project ${opts.projectId}`);
+    if (!main.tipVersionId) {
+      throw new ValidationError('Main has no tip version yet');
+    }
+
+    const scenario: Scenario = {
+      id: this.store.newId(),
+      projectId: opts.projectId,
+      name,
+      tipVersionId: main.tipVersionId, // same version id — do not duplicate blob
+      isMain: false,
+    };
+    meta.scenarios.push(scenario);
+    await this.store.writeMeta(meta);
+    return scenario;
   }
 
   async createProject(opts: {

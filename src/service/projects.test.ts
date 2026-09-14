@@ -208,3 +208,170 @@ describe('M2 API', () => {
     expect(round.sheets.Budget.cells.B3.f).toBe('=B2*0.2');
   });
 });
+
+describe('M3 Scenarios', () => {
+  let dataDir: string;
+  let store: BitStore;
+  let service: ProjectService;
+
+  beforeEach(async () => {
+    dataDir = await mkdtemp(join(tmpdir(), 'bit-m3-'));
+    store = new BitStore(dataDir);
+    await store.init();
+    service = new ProjectService(store);
+  });
+
+  afterEach(async () => {
+    await rm(dataDir, { recursive: true, force: true });
+  });
+
+  it('create scenario tip equals Main tip; save on scenario leaves Main tip; Main advances independently', async () => {
+    const v1Buf = await writeXlsx(budgetSnapshot());
+    const project = await service.createProject({
+      name: 'Scenario Budget',
+      author: 'Alex',
+      message: 'Initial',
+      xlsxBuffer: v1Buf,
+    });
+    const mainTipId = project.tipVersion!.id;
+
+    const scenario = await service.createScenario({
+      projectId: project.id,
+      name: 'Tax update',
+      author: 'Jordan',
+    });
+    expect(scenario.tipVersionId).toBe(mainTipId);
+    expect(scenario.isMain).toBe(false);
+    expect(scenario.name).toBe('Tax update');
+
+    const listed = await service.listScenarios(project.id);
+    expect(listed[0].isMain).toBe(true);
+    expect(listed.map((s) => s.name)).toEqual(['Main', 'Tax update']);
+
+    const scenBuf = await writeXlsx(
+      budgetSnapshot({
+        B2: { v: 1100, f: null, fmt: { numFmt: '#,##0.00' } },
+      }),
+    );
+    const scenVer = await service.saveVersion({
+      projectId: project.id,
+      scenarioId: scenario.id,
+      author: 'Jordan',
+      message: 'Tax scenario edit',
+      xlsxBuffer: scenBuf,
+    });
+    expect(scenVer.parentIds).toEqual([mainTipId]);
+
+    const afterScen = await service.getProject(project.id);
+    expect(afterScen.main.tipVersionId).toBe(mainTipId);
+    expect(afterScen.tipVersion?.id).toBe(mainTipId);
+
+    const scenFresh = await service.getScenario(scenario.id);
+    expect(scenFresh.tipVersionId).toBe(scenVer.id);
+
+    const mainBuf = await writeXlsx(
+      budgetSnapshot({
+        B2: { v: 2000, f: null, fmt: { numFmt: '#,##0.00' } },
+      }),
+    );
+    const mainVer = await service.saveVersion({
+      projectId: project.id,
+      author: 'Alex',
+      message: 'Main moved on',
+      xlsxBuffer: mainBuf,
+    });
+    expect(mainVer.parentIds).toEqual([mainTipId]);
+
+    const final = await service.getProject(project.id);
+    expect(final.main.tipVersionId).toBe(mainVer.id);
+    const scenStill = await service.getScenario(scenario.id);
+    expect(scenStill.tipVersionId).toBe(scenVer.id);
+  });
+
+  it('rejects blank and Main scenario names', async () => {
+    const project = await service.createProject({
+      name: 'Names',
+      author: 'Alex',
+      xlsxBuffer: await writeXlsx(budgetSnapshot()),
+    });
+    await expect(
+      service.createScenario({ projectId: project.id, name: '  ' }),
+    ).rejects.toThrow(/required/i);
+    await expect(
+      service.createScenario({ projectId: project.id, name: 'Main' }),
+    ).rejects.toThrow(/Main/i);
+    await expect(
+      service.createScenario({ projectId: project.id, name: 'main' }),
+    ).rejects.toThrow(/Main/i);
+  });
+});
+
+describe('M3 API', () => {
+  let dataDir: string;
+  let app: Awaited<ReturnType<typeof buildApp>>['app'];
+
+  beforeEach(async () => {
+    dataDir = await mkdtemp(join(tmpdir(), 'bit-m3-api-'));
+    const built = await buildApp({ dataDir, logger: false });
+    app = built.app;
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    await app.close();
+    await rm(dataDir, { recursive: true, force: true });
+  });
+
+  it('HTTP POST scenario + POST versions + GET project shows both tips', async () => {
+    const buf = await writeXlsx(budgetSnapshot());
+    const createMp = multipartPayload(
+      { name: 'M3 API', author: 'Alex', message: 'Start' },
+      { field: 'file', filename: 'budget.xlsx', buffer: buf },
+    );
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/projects',
+      headers: { 'content-type': createMp.contentType },
+      payload: createMp.payload,
+    });
+    expect(createRes.statusCode).toBe(201);
+    const project = createRes.json();
+    const mainTip = project.tipVersion.id as string;
+
+    const scenRes = await app.inject({
+      method: 'POST',
+      url: `/projects/${project.id}/scenarios`,
+      headers: { 'content-type': 'application/json', 'x-bit-author': 'Jordan' },
+      payload: JSON.stringify({ name: 'Tax update' }),
+    });
+    expect(scenRes.statusCode).toBe(201);
+    const scenario = scenRes.json();
+    expect(scenario.tipVersionId).toBe(mainTip);
+
+    const v2Buf = await writeXlsx(
+      budgetSnapshot({
+        B2: { v: 1300, f: null, fmt: { numFmt: '#,##0.00' } },
+      }),
+    );
+    const saveMp = multipartPayload(
+      { message: 'Scenario save', author: 'Jordan' },
+      { field: 'file', filename: 's.xlsx', buffer: v2Buf },
+    );
+    const saveRes = await app.inject({
+      method: 'POST',
+      url: `/scenarios/${scenario.id}/versions`,
+      headers: { 'content-type': saveMp.contentType, 'x-bit-author': 'Jordan' },
+      payload: saveMp.payload,
+    });
+    expect(saveRes.statusCode).toBe(201);
+    const saved = saveRes.json();
+    expect(saved.parentIds).toEqual([mainTip]);
+
+    const getRes = await app.inject({ method: 'GET', url: `/projects/${project.id}` });
+    expect(getRes.statusCode).toBe(200);
+    const detail = getRes.json();
+    expect(detail.main.tipVersionId).toBe(mainTip);
+    const tax = detail.scenarios.find((s: { name: string }) => s.name === 'Tax update');
+    expect(tax.tipVersionId).toBe(saved.id);
+  });
+});

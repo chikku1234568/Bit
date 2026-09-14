@@ -121,6 +121,30 @@ export async function buildApp(opts: BuildAppOptions): Promise<{
     return service.getProject(request.params.id);
   });
 
+  app.get<{ Params: { id: string } }>('/projects/:id/scenarios', async (request) => {
+    return service.listScenarios(request.params.id);
+  });
+
+  app.post<{ Params: { id: string }; Body: { name?: string; author?: string } }>(
+    '/projects/:id/scenarios',
+    async (request, reply) => {
+      const body = (request.body ?? {}) as { name?: string; author?: string };
+      const name = typeof body.name === 'string' ? body.name : '';
+      const scenario = await service.createScenario({
+        projectId: request.params.id,
+        name,
+        author: authorFrom(request as any, {
+          author: typeof body.author === 'string' ? body.author : '',
+        }),
+      });
+      return reply.status(201).send(scenario);
+    },
+  );
+
+  app.get<{ Params: { id: string } }>('/scenarios/:id', async (request) => {
+    return service.getScenario(request.params.id);
+  });
+
   app.get<{ Params: { id: string } }>('/projects/:id/versions', async (request) => {
     return service.listVersions(request.params.id);
   });

@@ -1,6 +1,6 @@
-# Bit — M2 Versions
+# Bit — M3 Scenarios
 
-Version control for Excel. **M2** adds Project, Main, Save version, history, and download on top of the M1 xlsx bridge.
+Version control for Excel. **M3** adds named scenarios (create, switch, save) on top of M2 Project / Main / Save version.
 
 Practical onboarding: see **[BIT-GUIDE.md](BIT-GUIDE.md)**.
 
@@ -34,8 +34,9 @@ Open `http://127.0.0.1:5173`.
 1. Set **You are** in the top bar (stub author; no real auth in M2).
 2. **Create project** — name + upload `.xlsx` → Main version 1.
 3. Open the project — see Main tip and version history.
-4. Edit the workbook in Excel, then **Save version** (upload + note).
-5. **Download .xlsx** for any version.
+4. **Create scenario**, then **Switch scenario**.
+5. Edit in Excel, **Save version** on the selected scenario (Main tip stays put).
+6. **Download .xlsx** for any version tip.
 
 Optional env:
 
@@ -59,7 +60,7 @@ The UI stores the name in `localStorage` (`bit-author`). Invite / two-user is M7
 npm test
 ```
 
-Includes M1 xlsx round-trips and M2 create → save version → history → download (service + HTTP).
+Includes M1 xlsx round-trips, M2 versions, and M3 scenario create/switch/save (service + HTTP).
 
 ## Round-trip CLI (M1)
 
@@ -80,13 +81,16 @@ data/              # Runtime store (gitignored)
 fixtures/          # Sample budget workbook
 ```
 
-## API (M2)
+## API (M3)
 
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET | `/projects` | List projects |
 | POST | `/projects` | Create (multipart: `file`, `name`, `message`, `author`) |
-| GET | `/projects/:id` | Project + Main tip |
+| GET | `/projects/:id` | Project + Main tip + scenarios |
+| GET | `/projects/:id/scenarios` | List scenarios (Main first) |
+| POST | `/projects/:id/scenarios` | Create scenario from Main tip (`{ name }`) |
+| GET | `/scenarios/:id` | Scenario metadata |
 | GET | `/projects/:id/versions` | Version history |
 | POST | `/projects/:id/versions` | Save version on Main |
 | POST | `/scenarios/:id/versions` | Save version on a scenario |
@@ -101,7 +105,7 @@ fixtures/          # Sample budget workbook
 
 ## Out of scope (later milestones)
 
-Scenarios UI (M3), What changed (M4), merge (M5), review (M6), invite / two-user E2E (M7).
+What changed (M4), merge (M5), review (M6), invite / two-user E2E (M7).
 
 ## Design
 
