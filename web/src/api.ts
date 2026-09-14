@@ -136,3 +136,22 @@ export async function saveVersion(opts: {
 export function downloadVersionUrl(versionId: string): string {
   return `${API_BASE}/versions/${versionId}/xlsx`;
 }
+
+export interface DiffEntry {
+  kind: string;
+  sheet?: string;
+  address?: string;
+  before?: unknown;
+  after?: unknown;
+}
+
+export interface DiffResult {
+  changes: DiffEntry[];
+  baseId: string;
+  compareId: string;
+}
+
+export async function getDiff(base: string, compare: string): Promise<DiffResult> {
+  const qs = new URLSearchParams({ base, compare });
+  return json(await fetch(`${API_BASE}/diff?${qs}`));
+}

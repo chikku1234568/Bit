@@ -200,5 +200,15 @@ export async function buildApp(opts: BuildAppOptions): Promise<{
       .send(buffer);
   });
 
+
+  app.get<{ Querystring: { base?: string; compare?: string } }>('/diff', async (request) => {
+    const base = request.query.base;
+    const compare = request.query.compare;
+    if (!base || !compare) {
+      throw new ValidationError('Query params base and compare are required');
+    }
+    return service.diffVersions(base, compare);
+  });
+
   return { app, store, service };
 }

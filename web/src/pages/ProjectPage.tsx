@@ -132,6 +132,13 @@ export function ProjectPage() {
         ← Projects
       </Link>
       <h1>{project.name}</h1>
+      <p>
+        <Link
+          to={`/projects/${id}/what-changed?scenario=${selectedScenario?.id ?? ''}`}
+        >
+          What changed
+        </Link>
+      </p>
       <p className="muted">
         Scenario: <strong>{selectedScenario?.name ?? 'Main'}</strong>
         {selectedTip ? (

@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { getAuthor, setAuthor } from './api';
 import { HomePage } from './pages/HomePage';
 import { ProjectPage } from './pages/ProjectPage';
+import { WhatChangedPage } from './pages/WhatChangedPage';
 
 export default function App() {
   const [author, setAuthorState] = useState(getAuthor());
@@ -30,6 +31,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/projects/:id" element={<ProjectPage />} />
+          <Route path="/projects/:id/what-changed" element={<WhatChangedPage />} />
         </Routes>
       </main>
     </div>

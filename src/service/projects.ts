@@ -1,4 +1,5 @@
 import type { WorkbookSnapshot } from '../xlsx/types.js';
+import { diffSnapshots, type DiffResult } from '../diff/diff.js';
 import { parseXlsx, writeXlsx } from '../xlsx/index.js';
 import type {
   Project,
@@ -269,5 +270,20 @@ export class ProjectService {
   async getVersionSnapshot(versionId: string): Promise<WorkbookSnapshot> {
     const version = await this.getVersion(versionId);
     return this.store.getSnapshot(version.snapshotHash);
+  }
+
+  async diffVersions(baseId: string, compareId: string): Promise<DiffResult & { baseId: string; compareId: string }> {
+    const meta = await this.store.readMeta();
+    const base = meta.versions.find((v) => v.id === baseId);
+    const compare = meta.versions.find((v) => v.id === compareId);
+    if (!base) throw new NotFoundError(`Version not found: ${baseId}`);
+    if (!compare) throw new NotFoundError(`Version not found: ${compareId}`);
+    if (base.projectId !== compare.projectId) {
+      throw new ValidationError('Versions must belong to the same project');
+    }
+    const baseSnap = await this.store.getSnapshot(base.snapshotHash);
+    const compareSnap = await this.store.getSnapshot(compare.snapshotHash);
+    const result = diffSnapshots(baseSnap, compareSnap);
+    return { ...result, baseId, compareId };
   }
 }

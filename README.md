@@ -1,6 +1,6 @@
-# Bit — M3 Scenarios
+# Bit — M4 What changed
 
-Version control for Excel. **M3** adds named scenarios (create, switch, save) on top of M2 Project / Main / Save version.
+Version control for Excel. **M4** adds **What changed** (pure snapshot diff + API + UI) on top of scenarios.
 
 Practical onboarding: see **[BIT-GUIDE.md](BIT-GUIDE.md)**.
 
@@ -60,7 +60,7 @@ The UI stores the name in `localStorage` (`bit-author`). Invite / two-user is M7
 npm test
 ```
 
-Includes M1 xlsx round-trips, M2 versions, and M3 scenario create/switch/save (service + HTTP).
+Includes M1–M4: xlsx, versions, scenarios, and What changed diff tests.
 
 ## Round-trip CLI (M1)
 
@@ -75,13 +75,14 @@ src/xlsx/          # M1 bridge — parse/write snapshot (do not reimplement)
 src/domain/        # Project, Version, Scenario (Main)
 src/store/         # Local demo store: data/meta.json + blobs/ + xlsx/
 src/service/       # ProjectService
+src/diff/          # Pure snapshot diff (M4)
 src/api/           # Fastify HTTP API
 web/               # Vite + React UI (Home, Project)
 data/              # Runtime store (gitignored)
 fixtures/          # Sample budget workbook
 ```
 
-## API (M3)
+## API (M4)
 
 | Method | Path | Purpose |
 |--------|------|---------|
@@ -96,6 +97,7 @@ fixtures/          # Sample budget workbook
 | POST | `/scenarios/:id/versions` | Save version on a scenario |
 | GET | `/versions/:id` | Version metadata |
 | GET | `/versions/:id/xlsx` | Download export |
+| GET | `/diff?base=&compare=` | Cell/sheet diff between versions |
 
 ## Fidelity bar (tracked)
 
@@ -105,7 +107,7 @@ fixtures/          # Sample budget workbook
 
 ## Out of scope (later milestones)
 
-What changed (M4), merge (M5), review (M6), invite / two-user E2E (M7).
+Merge (M5), review (M6), invite / two-user E2E (M7).
 
 ## Design
 

@@ -375,3 +375,84 @@ describe('M3 API', () => {
     expect(tax.tipVersionId).toBe(saved.id);
   });
 });
+
+describe('M4 Diff API', () => {
+  let dataDir: string;
+  let app: Awaited<ReturnType<typeof buildApp>>['app'];
+
+  beforeEach(async () => {
+    dataDir = await mkdtemp(join(tmpdir(), 'bit-m4-api-'));
+    const built = await buildApp({ dataDir, logger: false });
+    app = built.app;
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    await app.close();
+    await rm(dataDir, { recursive: true, force: true });
+  });
+
+  it('GET /diff returns changes; 404 missing; 400 different projects', async () => {
+    const buf = await writeXlsx(budgetSnapshot());
+    const createMp = multipartPayload(
+      { name: 'Diff Proj', author: 'Alex', message: 'v1' },
+      { field: 'file', filename: 'b.xlsx', buffer: buf },
+    );
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/projects',
+      headers: { 'content-type': createMp.contentType },
+      payload: createMp.payload,
+    });
+    const project = createRes.json();
+    const v1 = project.tipVersion.id as string;
+
+    const v2Buf = await writeXlsx(
+      budgetSnapshot({
+        B2: { v: 999, f: null, fmt: { numFmt: '#,##0.00' } },
+      }),
+    );
+    const saveMp = multipartPayload(
+      { message: 'v2', author: 'Alex' },
+      { field: 'file', filename: 'b2.xlsx', buffer: v2Buf },
+    );
+    const saveRes = await app.inject({
+      method: 'POST',
+      url: `/projects/${project.id}/versions`,
+      headers: { 'content-type': saveMp.contentType },
+      payload: saveMp.payload,
+    });
+    const v2 = saveRes.json().id as string;
+
+    const diffRes = await app.inject({
+      method: 'GET',
+      url: `/diff?base=${v1}&compare=${v2}`,
+    });
+    expect(diffRes.statusCode).toBe(200);
+    const body = diffRes.json();
+    expect(body.changes.some((c: { kind: string }) => c.kind === 'cell-value')).toBe(true);
+
+    const miss = await app.inject({
+      method: 'GET',
+      url: `/diff?base=${v1}&compare=00000000-0000-0000-0000-000000000000`,
+    });
+    expect(miss.statusCode).toBe(404);
+
+    const otherMp = multipartPayload(
+      { name: 'Other', author: 'Alex', message: 'o1' },
+      { field: 'file', filename: 'o.xlsx', buffer: buf },
+    );
+    const other = await app.inject({
+      method: 'POST',
+      url: '/projects',
+      headers: { 'content-type': otherMp.contentType },
+      payload: otherMp.payload,
+    });
+    const otherId = other.json().tipVersion.id as string;
+    const bad = await app.inject({
+      method: 'GET',
+      url: `/diff?base=${v1}&compare=${otherId}`,
+    });
+    expect(bad.statusCode).toBe(400);
+  });
+});
