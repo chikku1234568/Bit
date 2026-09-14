@@ -2,6 +2,8 @@
 
 Version control for Excel. **M2** adds Project, Main, Save version, history, and download on top of the M1 xlsx bridge.
 
+Practical onboarding: see **[BIT-GUIDE.md](BIT-GUIDE.md)**.
+
 ## Install
 
 ```bash
