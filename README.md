@@ -1,4 +1,4 @@
-# Bit — M6 Review + Combine
+# Bit — V0 (M1–M7 offline)
 
 Version control for Excel. **M6** adds Ask for review, Needs a decision, and Combine into Main.
 
@@ -116,8 +116,12 @@ fixtures/          # Sample budget workbook
 
 ## Out of scope (later milestones)
 
-E2E demo script (M7).
+None for V0 core path — see docs/E2E-DEMO.md.
+
+## E2E demo
+
+See [`docs/E2E-DEMO.md`](docs/E2E-DEMO.md) (Alex / Jordan click path).
 
 ## Design
 
-See `BIT-V0-DESIGN.md`.
+See `BIT-V0-DESIGN.md`. Practical guide: `BIT-GUIDE.md`.

@@ -29,7 +29,7 @@ Reset store: delete `./data/` (gitignored). Meta + blobs + cached `.xlsx` live t
 | **M4** | What changed (diff) | Done |
 | **M5** | Three-way merge engine + preview API | Done |
 | **M6** | Ask for review, Needs a decision, Combine into Main | Done |
-| **M7** | Two-user E2E demo script (Alex/Jordan) | Next |
+| **M7** | Two-user E2E demo script (Alex/Jordan) | Done |
 
 ## Key paths
 
@@ -43,7 +43,7 @@ src/diff/           # Pure snapshot diff (M4+)
 src/merge/          # Pure three-way merge (M5+)
 web/src/pages/      # Home, Project, What changed, Review
 fixtures/           # Sample budget workbook
-docs/               # E2E demo notes (M7)
+docs/E2E-DEMO.md     # Alex/Jordan click path (M7)
 ```
 
 ## Auth stub (through M6)
