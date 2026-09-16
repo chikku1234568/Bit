@@ -6,6 +6,7 @@ import {
   ProjectService,
   NotFoundError,
   ValidationError,
+  ConflictError,
 } from '../service/projects.js';
 
 export interface BuildAppOptions {
@@ -86,6 +87,9 @@ export async function buildApp(opts: BuildAppOptions): Promise<{
     if (err instanceof ValidationError) {
       return reply.status(400).send({ error: err.message });
     }
+    if (err instanceof ConflictError) {
+      return reply.status(409).send({ error: err.message, details: err.details });
+    }
     app.log.error(err);
     return reply.status(500).send({ error: 'Internal server error' });
   });
@@ -119,6 +123,30 @@ export async function buildApp(opts: BuildAppOptions): Promise<{
 
   app.get<{ Params: { id: string } }>('/projects/:id', async (request) => {
     return service.getProject(request.params.id);
+  });
+
+  app.get<{ Params: { id: string } }>('/projects/:id/scenarios', async (request) => {
+    return service.listScenarios(request.params.id);
+  });
+
+  app.post<{ Params: { id: string }; Body: { name?: string; author?: string } }>(
+    '/projects/:id/scenarios',
+    async (request, reply) => {
+      const body = (request.body ?? {}) as { name?: string; author?: string };
+      const name = typeof body.name === 'string' ? body.name : '';
+      const scenario = await service.createScenario({
+        projectId: request.params.id,
+        name,
+        author: authorFrom(request as any, {
+          author: typeof body.author === 'string' ? body.author : '',
+        }),
+      });
+      return reply.status(201).send(scenario);
+    },
+  );
+
+  app.get<{ Params: { id: string } }>('/scenarios/:id', async (request) => {
+    return service.getScenario(request.params.id);
   });
 
   app.get<{ Params: { id: string } }>('/projects/:id/versions', async (request) => {
@@ -175,6 +203,85 @@ export async function buildApp(opts: BuildAppOptions): Promise<{
       .header('Content-Disposition', `attachment; filename="${filename}"`)
       .send(buffer);
   });
+
+
+  app.get<{ Querystring: { base?: string; compare?: string } }>('/diff', async (request) => {
+    const base = request.query.base;
+    const compare = request.query.compare;
+    if (!base || !compare) {
+      throw new ValidationError('Query params base and compare are required');
+    }
+    return service.diffVersions(base, compare);
+  });
+
+
+  app.get<{ Querystring: { base?: string; ours?: string; theirs?: string } }>('/merge', async (request) => {
+    const { base, ours, theirs } = request.query;
+    if (!base || !ours || !theirs) {
+      throw new ValidationError('Query params base, ours, and theirs are required');
+    }
+    return service.previewMerge({ baseId: base, oursId: ours, theirsId: theirs });
+  });
+
+
+  app.post<{ Params: { id: string }; Body: { note?: string; author?: string } }>(
+    '/scenarios/:id/reviews',
+    async (request, reply) => {
+      const body = (request.body ?? {}) as { note?: string; author?: string };
+      const review = await service.createReview({
+        scenarioId: request.params.id,
+        author: authorFrom(request as any, {
+          author: typeof body.author === 'string' ? body.author : '',
+        }),
+        note: body.note,
+      });
+      return reply.status(201).send(review);
+    },
+  );
+
+  app.get<{ Params: { id: string } }>('/projects/:id/reviews', async (request) => {
+    return service.listReviews(request.params.id);
+  });
+
+  app.get<{ Params: { id: string } }>('/reviews/:id', async (request) => {
+    return service.getReview(request.params.id);
+  });
+
+  app.post<{ Params: { id: string }; Body: Record<string, unknown> }>(
+    '/reviews/:id/combine',
+    async (request, reply) => {
+      const body = (request.body ?? {}) as {
+        author?: string;
+        message?: string;
+        resolutions?: Record<string, { action: string; cell?: unknown }>;
+      };
+      const result = await service.combineReview({
+        reviewId: request.params.id,
+        author: authorFrom(request as any, {
+          author: typeof body.author === 'string' ? body.author : '',
+        }),
+        message: body.message,
+        resolutions: body.resolutions as any,
+      });
+      return reply.status(200).send(result);
+    },
+  );
+
+  app.post<{ Params: { id: string }; Body: { note?: string } }>(
+    '/reviews/:id/request-changes',
+    async (request) => {
+      const body = (request.body ?? {}) as { note?: string };
+      return service.updateReviewStatus(request.params.id, 'changes-requested', body.note);
+    },
+  );
+
+  app.post<{ Params: { id: string }; Body: { note?: string } }>(
+    '/reviews/:id/close',
+    async (request) => {
+      const body = (request.body ?? {}) as { note?: string };
+      return service.updateReviewStatus(request.params.id, 'closed', body.note);
+    },
+  );
 
   return { app, store, service };
 }

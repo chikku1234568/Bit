@@ -1,29 +1,39 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
+  createReview,
+  createScenario,
   downloadVersionUrl,
   getProject,
+  listReviews,
   listVersions,
   saveVersion,
   type ProjectDetail,
+  type Review,
+  type Scenario,
   type Version,
 } from '../api';
 
 export function ProjectPage() {
   const { id } = useParams<{ id: string }>();
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const [project, setProject] = useState<ProjectDetail | null>(null);
   const [versions, setVersions] = useState<Version[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [file, setFile] = useState<File | null>(null);
+  const [newScenarioName, setNewScenarioName] = useState('');
+  const [reviews, setReviews] = useState<Review[]>([]);
 
   const refresh = useCallback(async () => {
     if (!id) return;
     try {
-      const [p, v] = await Promise.all([getProject(id), listVersions(id)]);
+      const [p, v, r] = await Promise.all([getProject(id), listVersions(id), listReviews(id)]);
       setProject(p);
       setVersions(v);
+      setReviews(r);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -34,9 +44,57 @@ export function ProjectPage() {
     void refresh();
   }, [refresh]);
 
+  const selectedScenario: Scenario | null = useMemo(() => {
+    if (!project) return null;
+    const q = searchParams.get('scenario');
+    if (q) {
+      const found = project.scenarios.find((s) => s.id === q);
+      if (found) return found;
+    }
+    return project.main;
+  }, [project, searchParams]);
+
+  const selectedTipId = selectedScenario?.tipVersionId ?? null;
+  const selectedTip = versions.find((v) => v.id === selectedTipId) ?? null;
+
+  const filteredVersions = useMemo(() => {
+    if (!selectedScenario) return versions;
+    // Versions saved on this scenario, plus the shared tip when still pointing at Main.
+    return versions.filter(
+      (v) =>
+        v.scenarioId === selectedScenario.id ||
+        v.id === selectedScenario.tipVersionId,
+    );
+  }, [versions, selectedScenario]);
+
+  function switchScenario(scenarioId: string) {
+    if (!id) return;
+    navigate(`/projects/${id}?scenario=${scenarioId}`);
+  }
+
+  async function onCreateScenario(e: React.FormEvent) {
+    e.preventDefault();
+    if (!id || !newScenarioName.trim()) {
+      setError('Enter a scenario name');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const s = await createScenario({ projectId: id, name: newScenarioName.trim() });
+      setNewScenarioName('');
+      await refresh();
+      navigate(`/projects/${id}?scenario=${s.id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function onSave(e: React.FormEvent) {
     e.preventDefault();
-    if (!id || !file) {
+    if (!id || !file || !selectedScenario) {
       setError('Choose an .xlsx file to save a version');
       return;
     }
@@ -47,7 +105,12 @@ export function ProjectPage() {
     setBusy(true);
     setError(null);
     try {
-      await saveVersion({ projectId: id, message: message.trim(), file });
+      await saveVersion({
+        projectId: id,
+        scenarioId: selectedScenario.id,
+        message: message.trim(),
+        file,
+      });
       setMessage('');
       setFile(null);
       await refresh();
@@ -68,20 +131,26 @@ export function ProjectPage() {
     );
   }
 
-  const tip = project.tipVersion;
-
   return (
     <div className="page">
       <Link to="/" className="back">
         ← Projects
       </Link>
       <h1>{project.name}</h1>
+      <p>
+        <Link
+          to={`/projects/${id}/what-changed?scenario=${selectedScenario?.id ?? ''}`}
+        >
+          What changed
+        </Link>
+      </p>
       <p className="muted">
-        Scenario: <strong>Main</strong>
-        {tip ? (
+        Scenario: <strong>{selectedScenario?.name ?? 'Main'}</strong>
+        {selectedTip ? (
           <>
             {' '}
-            · tip saved {new Date(tip.timestamp).toLocaleString()} by {tip.author}
+            · tip saved {new Date(selectedTip.timestamp).toLocaleString()} by{' '}
+            {selectedTip.author}
           </>
         ) : null}
       </p>
@@ -89,16 +158,58 @@ export function ProjectPage() {
       {error && <div className="error">{error}</div>}
 
       <section className="card">
-        <h2>Main tip</h2>
-        {tip ? (
+        <h2>Scenarios</h2>
+        <ul className="list">
+          {project.scenarios.map((s) => (
+            <li key={s.id}>
+              <div>
+                <strong>{s.name}</strong>
+                {s.isMain ? <span className="muted"> · default</span> : null}
+              </div>
+              <button
+                type="button"
+                className="button secondary"
+                disabled={selectedScenario?.id === s.id}
+                onClick={() => switchScenario(s.id)}
+              >
+                {selectedScenario?.id === s.id ? 'Current' : 'Switch scenario'}
+              </button>
+            </li>
+          ))}
+        </ul>
+        <form onSubmit={onCreateScenario} className="form inline">
+          <label>
+            New scenario
+            <input
+              value={newScenarioName}
+              onChange={(e) => setNewScenarioName(e.target.value)}
+              placeholder="Tax update"
+            />
+          </label>
+          <button type="submit" disabled={busy || !newScenarioName.trim()}>
+            Create scenario
+          </button>
+        </form>
+      </section>
+
+      <section className="card">
+        <h2>{selectedScenario?.isMain ? 'Main tip' : `${selectedScenario?.name} tip`}</h2>
+        {selectedTip ? (
           <div className="tip">
             <div>
-              <strong>{tip.message}</strong>
+              <strong>{selectedTip.message}</strong>
               <div className="muted">
-                {tip.author} · {new Date(tip.timestamp).toLocaleString()}
+                {selectedTip.author} · {new Date(selectedTip.timestamp).toLocaleString()}
               </div>
             </div>
-            <a className="button" href={downloadVersionUrl(tip.id)}>
+            <a className="button" href={downloadVersionUrl(selectedTip.id)}>
+              Download .xlsx
+            </a>
+          </div>
+        ) : selectedTipId ? (
+          <div className="tip">
+            <p className="muted">Tip version {selectedTipId.slice(0, 8)}…</p>
+            <a className="button" href={downloadVersionUrl(selectedTipId)}>
               Download .xlsx
             </a>
           </div>
@@ -110,7 +221,8 @@ export function ProjectPage() {
       <section className="card">
         <h2>Save version</h2>
         <p className="muted">
-          Edit in Excel, then upload the workbook back to Main with a note.
+          Edit in Excel, then upload the workbook back to{' '}
+          <strong>{selectedScenario?.name ?? 'Main'}</strong> with a note.
         </p>
         <form onSubmit={onSave} className="form">
           <label>
@@ -136,13 +248,66 @@ export function ProjectPage() {
         </form>
       </section>
 
+
+      {!selectedScenario?.isMain ? (
+        <section className="card">
+          <h2>Ask for review</h2>
+          <p className="muted">
+            Request that Main take changes from <strong>{selectedScenario?.name}</strong>.
+          </p>
+          <button
+            type="button"
+            className="button"
+            disabled={busy}
+            onClick={() => {
+              if (!selectedScenario) return;
+              setBusy(true);
+              setError(null);
+              void createReview({ scenarioId: selectedScenario.id })
+                .then((rev) => {
+                  navigate(`/reviews/${rev.id}`);
+                })
+                .catch((err) => {
+                  setError(err instanceof Error ? err.message : String(err));
+                })
+                .finally(() => setBusy(false));
+            }}
+          >
+            Ask for review
+          </button>
+        </section>
+      ) : null}
+
+      {reviews.length > 0 ? (
+        <section className="card">
+          <h2>Reviews</h2>
+          <ul className="list">
+            {reviews.map((r) => (
+              <li key={r.id}>
+                <div>
+                  <strong>{r.status}</strong>
+                  <div className="muted">
+                    {r.author} · {new Date(r.createdAt).toLocaleString()}
+                    {r.note ? ` · ${r.note}` : ''}
+                  </div>
+                </div>
+                <Link className="button secondary" to={`/reviews/${r.id}`}>
+                  Open
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       <section className="card">
         <h2>Version history</h2>
-        {versions.length === 0 ? (
+        <p className="muted">Showing versions for {selectedScenario?.name ?? 'Main'}.</p>
+        {filteredVersions.length === 0 ? (
           <p className="muted">No versions.</p>
         ) : (
           <ul className="list versions">
-            {versions.map((v) => (
+            {filteredVersions.map((v) => (
               <li key={v.id}>
                 <div>
                   <strong>{v.message}</strong>
