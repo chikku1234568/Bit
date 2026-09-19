@@ -246,10 +246,7 @@ export async function buildApp(opts: BuildAppOptions): Promise<{
     if (!filename.toLowerCase().endsWith('.xlsx')) {
       throw new ValidationError('File must be .xlsx');
     }
-    // Resolve scenario → project
-    const meta = await runtime.store.readMeta();
-    const scenario = meta.scenarios.find((s) => s.id === request.params.id);
-    if (!scenario) throw new NotFoundError(`Scenario not found: ${request.params.id}`);
+    const scenario = await runtime.service.getScenario(request.params.id);
     const version = await runtime.service.saveVersion({
       projectId: scenario.projectId,
       scenarioId: scenario.id,
@@ -348,6 +345,27 @@ export async function buildApp(opts: BuildAppOptions): Promise<{
     async (request) => {
       const body = (request.body ?? {}) as { note?: string };
       return runtime.service.updateReviewStatus(request.params.id, 'closed', body.note);
+    },
+  );
+
+
+  app.post<{ Params: { id: string }; Body: { author?: string; message?: string; expectedMainTip?: string } }>(
+    '/versions/:id/promote',
+    async (request, reply) => {
+      const body = (request.body ?? {}) as {
+        author?: string;
+        message?: string;
+        expectedMainTip?: string;
+      };
+      const version = await runtime.service.promoteToMain({
+        versionId: request.params.id,
+        author: authorFrom(request as any, {
+          author: typeof body.author === 'string' ? body.author : '',
+        }),
+        message: body.message,
+        expectedMainTip: body.expectedMainTip,
+      });
+      return reply.status(201).send(version);
     },
   );
 

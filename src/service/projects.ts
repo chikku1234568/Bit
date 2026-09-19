@@ -15,7 +15,7 @@ import type {
   VersionListItem,
   Review,
 } from '../domain/types.js';
-import type { BitStore } from '../store/store.js';
+import { BitStore, StoreConflictError } from '../store/store.js';
 
 export class NotFoundError extends Error {
   constructor(message: string) {
@@ -38,33 +38,39 @@ export class ConflictError extends Error {
   }
 }
 
+function mapStoreConflict(err: unknown): never {
+  if (err instanceof StoreConflictError) {
+    throw new ConflictError(err.message, err.details);
+  }
+  throw err;
+}
+
 export class ProjectService {
   constructor(private readonly store: BitStore) {}
 
   async listProjects(): Promise<Project[]> {
-    const meta = await this.store.readMeta();
-    return [...meta.projects].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    const catalog = await this.store.readCatalog();
+    return [...catalog.projects].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 
   async getProject(id: string): Promise<ProjectDetail> {
-    const meta = await this.store.readMeta();
-    const project = meta.projects.find((p) => p.id === id);
+    const catalog = await this.store.readCatalog();
+    const project = catalog.projects.find((p) => p.id === id);
     if (!project) throw new NotFoundError(`Project not found: ${id}`);
     const scenarios = await this.listScenarios(id);
     const main = scenarios.find((s) => s.id === project.mainScenarioId);
     if (!main) throw new NotFoundError(`Main scenario missing for project ${id}`);
     const tipVersion = main.tipVersionId
-      ? meta.versions.find((v) => v.id === main.tipVersionId) ?? null
+      ? (await this.store.getVersion(main.tipVersionId)) ?? null
       : null;
     return { ...project, main, scenarios, tipVersion };
   }
 
-
   async listScenarios(projectId: string): Promise<Scenario[]> {
-    const meta = await this.store.readMeta();
-    const project = meta.projects.find((p) => p.id === projectId);
+    const catalog = await this.store.readCatalog();
+    const project = catalog.projects.find((p) => p.id === projectId);
     if (!project) throw new NotFoundError(`Project not found: ${projectId}`);
-    const scenarios = meta.scenarios.filter((s) => s.projectId === projectId);
+    const scenarios = catalog.scenarios.filter((s) => s.projectId === projectId);
     const main = scenarios.find((s) => s.id === project.mainScenarioId);
     const rest = scenarios
       .filter((s) => s.id !== project.mainScenarioId)
@@ -73,8 +79,8 @@ export class ProjectService {
   }
 
   async getScenario(scenarioId: string): Promise<Scenario> {
-    const meta = await this.store.readMeta();
-    const scenario = meta.scenarios.find((s) => s.id === scenarioId);
+    const catalog = await this.store.readCatalog();
+    const scenario = catalog.scenarios.find((s) => s.id === scenarioId);
     if (!scenario) throw new NotFoundError(`Scenario not found: ${scenarioId}`);
     return scenario;
   }
@@ -90,31 +96,38 @@ export class ProjectService {
       throw new ValidationError('Cannot name a scenario "Main"');
     }
 
-    const meta = await this.store.readMeta();
-    const project = meta.projects.find((p) => p.id === opts.projectId);
-    if (!project) throw new NotFoundError(`Project not found: ${opts.projectId}`);
+    try {
+      return await this.store.withLock(async () => {
+        const catalog = await this.store.readCatalog();
+        const project = catalog.projects.find((p) => p.id === opts.projectId);
+        if (!project) throw new NotFoundError(`Project not found: ${opts.projectId}`);
 
-    const existing = meta.scenarios.filter((s) => s.projectId === opts.projectId);
-    if (existing.some((s) => s.name.toLowerCase() === name.toLowerCase())) {
-      throw new ValidationError(`Scenario name already used: ${name}`);
+        const existing = catalog.scenarios.filter((s) => s.projectId === opts.projectId);
+        if (existing.some((s) => s.name.toLowerCase() === name.toLowerCase())) {
+          throw new ValidationError(`Scenario name already used: ${name}`);
+        }
+
+        const main = existing.find((s) => s.id === project.mainScenarioId);
+        if (!main) throw new NotFoundError(`Main scenario missing for project ${opts.projectId}`);
+        if (!main.tipVersionId) {
+          throw new ValidationError('Main has no tip version yet');
+        }
+
+        const scenario: Scenario = {
+          id: this.store.newId(),
+          projectId: opts.projectId,
+          name,
+          tipVersionId: main.tipVersionId,
+          isMain: false,
+        };
+        catalog.scenarios.push(scenario);
+        await this.store.writeCatalog(catalog);
+        return scenario;
+      });
+    } catch (err) {
+      if (err instanceof NotFoundError || err instanceof ValidationError) throw err;
+      mapStoreConflict(err);
     }
-
-    const main = existing.find((s) => s.id === project.mainScenarioId);
-    if (!main) throw new NotFoundError(`Main scenario missing for project ${opts.projectId}`);
-    if (!main.tipVersionId) {
-      throw new ValidationError('Main has no tip version yet');
-    }
-
-    const scenario: Scenario = {
-      id: this.store.newId(),
-      projectId: opts.projectId,
-      name,
-      tipVersionId: main.tipVersionId, // same version id — do not duplicate blob
-      isMain: false,
-    };
-    meta.scenarios.push(scenario);
-    await this.store.writeMeta(meta);
-    return scenario;
   }
 
   async createProject(opts: {
@@ -167,28 +180,33 @@ export class ProjectService {
       snapshotHash,
     };
 
-    // Cache export artefact from original upload when possible; also write from snapshot for fidelity.
     const exportBuf = await writeXlsx(snapshot);
     await this.store.putXlsxArtefact(versionId, exportBuf);
+    await this.store.putVersion(version);
 
-    const meta = await this.store.readMeta();
-    meta.projects.push(project);
-    meta.scenarios.push(scenario);
-    meta.versions.push(version);
-    await this.store.writeMeta(meta);
+    try {
+      await this.store.withLock(async () => {
+        const catalog = await this.store.readCatalog();
+        catalog.projects.push(project);
+        catalog.scenarios.push(scenario);
+        await this.store.writeCatalog(catalog);
+      });
+    } catch (err) {
+      mapStoreConflict(err);
+    }
 
     return this.getProject(projectId);
   }
 
   async listVersions(projectId: string): Promise<VersionListItem[]> {
-    const meta = await this.store.readMeta();
-    const project = meta.projects.find((p) => p.id === projectId);
+    const catalog = await this.store.readCatalog();
+    const project = catalog.projects.find((p) => p.id === projectId);
     if (!project) throw new NotFoundError(`Project not found: ${projectId}`);
     const scenarios = new Map(
-      meta.scenarios.filter((s) => s.projectId === projectId).map((s) => [s.id, s]),
+      catalog.scenarios.filter((s) => s.projectId === projectId).map((s) => [s.id, s]),
     );
-    return meta.versions
-      .filter((v) => v.projectId === projectId)
+    const versions = await this.store.listVersionRecords(projectId);
+    return versions
       .map((v) => ({
         ...v,
         scenarioName: scenarios.get(v.scenarioId)?.name ?? 'Unknown',
@@ -207,19 +225,20 @@ export class ProjectService {
       isMain: boolean;
       isTip: boolean;
       parentIds: string[];
+      promotedFromVersionId?: string;
     }>;
     edges: Array<{ from: string; to: string }>;
     scenarios: Array<{ id: string; name: string; isMain: boolean; tipVersionId: string | null }>;
   }> {
-    const meta = await this.store.readMeta();
-    const project = meta.projects.find((p) => p.id === projectId);
+    const catalog = await this.store.readCatalog();
+    const project = catalog.projects.find((p) => p.id === projectId);
     if (!project) throw new NotFoundError(`Project not found: ${projectId}`);
-    const scenarios = meta.scenarios.filter((s) => s.projectId === projectId);
+    const scenarios = catalog.scenarios.filter((s) => s.projectId === projectId);
     const scenarioById = new Map(scenarios.map((s) => [s.id, s]));
     const tipIds = new Set(
       scenarios.map((s) => s.tipVersionId).filter((id): id is string => !!id),
     );
-    const versions = meta.versions.filter((v) => v.projectId === projectId);
+    const versions = await this.store.listVersionRecords(projectId);
     const nodes = versions.map((v) => {
       const sc = scenarioById.get(v.scenarioId);
       return {
@@ -232,6 +251,7 @@ export class ProjectService {
         isMain: sc?.isMain ?? false,
         isTip: tipIds.has(v.id),
         parentIds: v.parentIds,
+        promotedFromVersionId: v.promotedFromVersionId,
       };
     });
     const edges: Array<{ from: string; to: string }> = [];
@@ -253,10 +273,10 @@ export class ProjectService {
   }
 
   async getVersion(versionId: string): Promise<Version & { scenarioName: string }> {
-    const meta = await this.store.readMeta();
-    const version = meta.versions.find((v) => v.id === versionId);
+    const version = await this.store.getVersion(versionId);
     if (!version) throw new NotFoundError(`Version not found: ${versionId}`);
-    const scenario = meta.scenarios.find((s) => s.id === version.scenarioId);
+    const catalog = await this.store.readCatalog();
+    const scenario = catalog.scenarios.find((s) => s.id === version.scenarioId);
     return { ...version, scenarioName: scenario?.name ?? 'Unknown' };
   }
 
@@ -267,13 +287,15 @@ export class ProjectService {
     author: string;
     message: string;
     xlsxBuffer: Buffer;
+    /** When set, CAS requires this tip; defaults to current tip at read time. */
+    expectedTipVersionId?: string | null;
   }): Promise<Version> {
-    const meta = await this.store.readMeta();
-    const project = meta.projects.find((p) => p.id === opts.projectId);
+    const catalog = await this.store.readCatalog();
+    const project = catalog.projects.find((p) => p.id === opts.projectId);
     if (!project) throw new NotFoundError(`Project not found: ${opts.projectId}`);
 
     const scenarioId = opts.scenarioId ?? project.mainScenarioId;
-    const scenario = meta.scenarios.find(
+    const scenario = catalog.scenarios.find(
       (s) => s.id === scenarioId && s.projectId === opts.projectId,
     );
     if (!scenario) throw new NotFoundError(`Scenario not found: ${scenarioId}`);
@@ -291,10 +313,15 @@ export class ProjectService {
       );
     }
 
+    const expectedTip =
+      opts.expectedTipVersionId !== undefined
+        ? opts.expectedTipVersionId
+        : scenario.tipVersionId;
+
     const snapshotHash = await this.store.putSnapshot(snapshot);
     const now = new Date().toISOString();
     const versionId = this.store.newId();
-    const parentIds = scenario.tipVersionId ? [scenario.tipVersionId] : [];
+    const parentIds = expectedTip ? [expectedTip] : [];
 
     const version: Version = {
       id: versionId,
@@ -309,19 +336,89 @@ export class ProjectService {
 
     const exportBuf = await writeXlsx(snapshot);
     await this.store.putXlsxArtefact(versionId, exportBuf);
+    // Append-only: version file first, then CAS tip.
+    await this.store.putVersion(version);
 
-    scenario.tipVersionId = versionId;
-    meta.versions.push(version);
-    await this.store.writeMeta(meta);
+    try {
+      await this.store.casScenarioTip(scenario.id, expectedTip, versionId);
+    } catch (err) {
+      mapStoreConflict(err);
+    }
+
+    return version;
+  }
+
+  /**
+   * Promote a version to Main (Make this Main).
+   * Creates a new Main version record reusing the same snapshot hash;
+   * parentIds = [previousMainTip]; sets promotedFromVersionId.
+   */
+  async promoteToMain(opts: {
+    versionId: string;
+    author: string;
+    message?: string;
+    expectedMainTip?: string | null;
+  }): Promise<Version> {
+    const source = await this.store.getVersion(opts.versionId);
+    if (!source) throw new NotFoundError(`Version not found: ${opts.versionId}`);
+
+    const catalog = await this.store.readCatalog();
+    const project = catalog.projects.find((p) => p.id === source.projectId);
+    if (!project) throw new NotFoundError(`Project not found: ${source.projectId}`);
+    const main = catalog.scenarios.find((s) => s.id === project.mainScenarioId);
+    if (!main) throw new NotFoundError('Main scenario missing');
+
+    const expectedTip =
+      opts.expectedMainTip !== undefined ? opts.expectedMainTip : main.tipVersionId;
+
+    if (expectedTip === opts.versionId || main.tipVersionId === opts.versionId) {
+      // Already Main tip — idempotent no-op return current tip version
+      const current = await this.store.getVersion(main.tipVersionId!);
+      if (current) return current;
+    }
+
+    const now = new Date().toISOString();
+    const versionId = this.store.newId();
+    const author = opts.author.trim() || 'anonymous';
+    const message =
+      (opts.message ?? `Made Main from ${source.message}`).trim() ||
+      'Made this Main';
+
+    const version: Version = {
+      id: versionId,
+      projectId: source.projectId,
+      scenarioId: main.id,
+      parentIds: expectedTip ? [expectedTip] : [],
+      author,
+      timestamp: now,
+      message,
+      snapshotHash: source.snapshotHash,
+      promotedFromVersionId: source.id,
+    };
+
+    // Reuse xlsx artefact when present; else rebuild from snapshot.
+    let xlsx = await this.store.getXlsxArtefact(source.id);
+    if (!xlsx) {
+      const snap = await this.store.getSnapshot(source.snapshotHash);
+      xlsx = await writeXlsx(snap);
+    }
+    await this.store.putXlsxArtefact(versionId, xlsx);
+    await this.store.putVersion(version);
+
+    try {
+      await this.store.casScenarioTip(main.id, expectedTip, versionId);
+    } catch (err) {
+      mapStoreConflict(err);
+    }
 
     return version;
   }
 
   async getVersionXlsx(versionId: string): Promise<{ buffer: Buffer; filename: string }> {
-    const meta = await this.store.readMeta();
-    const version = meta.versions.find((v) => v.id === versionId);
+    const version = await this.store.getVersion(versionId);
     if (!version) throw new NotFoundError(`Version not found: ${versionId}`);
-    const project = meta.projects.find((p) => p.id === version.projectId);
+    const catalog = await this.store.readCatalog();
+    const project = catalog.projects.find((p) => p.id === version.projectId);
     const safeName = (project?.name ?? 'workbook').replace(/[^\w\-]+/g, '_');
 
     let buffer = await this.store.getXlsxArtefact(versionId);
@@ -342,10 +439,12 @@ export class ProjectService {
     return this.store.getSnapshot(version.snapshotHash);
   }
 
-  async diffVersions(baseId: string, compareId: string): Promise<DiffResult & { baseId: string; compareId: string }> {
-    const meta = await this.store.readMeta();
-    const base = meta.versions.find((v) => v.id === baseId);
-    const compare = meta.versions.find((v) => v.id === compareId);
+  async diffVersions(
+    baseId: string,
+    compareId: string,
+  ): Promise<DiffResult & { baseId: string; compareId: string }> {
+    const base = await this.store.getVersion(baseId);
+    const compare = await this.store.getVersion(compareId);
     if (!base) throw new NotFoundError(`Version not found: ${baseId}`);
     if (!compare) throw new NotFoundError(`Version not found: ${compareId}`);
     if (base.projectId !== compare.projectId) {
@@ -369,10 +468,9 @@ export class ProjectService {
     oursId: string;
     theirsId: string;
   }> {
-    const meta = await this.store.readMeta();
-    const base = meta.versions.find((v) => v.id === opts.baseId);
-    const ours = meta.versions.find((v) => v.id === opts.oursId);
-    const theirs = meta.versions.find((v) => v.id === opts.theirsId);
+    const base = await this.store.getVersion(opts.baseId);
+    const ours = await this.store.getVersion(opts.oursId);
+    const theirs = await this.store.getVersion(opts.theirsId);
     if (!base) throw new NotFoundError(`Version not found: ${opts.baseId}`);
     if (!ours) throw new NotFoundError(`Version not found: ${opts.oursId}`);
     if (!theirs) throw new NotFoundError(`Version not found: ${opts.theirsId}`);
@@ -401,48 +499,55 @@ export class ProjectService {
     author: string;
     note?: string;
   }): Promise<Review> {
-    const meta = await this.store.readMeta();
-    const scenario = meta.scenarios.find((s) => s.id === opts.scenarioId);
-    if (!scenario) throw new NotFoundError(`Scenario not found: ${opts.scenarioId}`);
-    if (scenario.isMain) {
-      throw new ValidationError('Cannot ask for review from Main — create a scenario first');
-    }
-    const project = meta.projects.find((p) => p.id === scenario.projectId);
-    if (!project) throw new NotFoundError(`Project not found: ${scenario.projectId}`);
-    const main = meta.scenarios.find((s) => s.id === project.mainScenarioId);
-    if (!main?.tipVersionId) throw new ValidationError('Main has no tip version');
-    if (!scenario.tipVersionId) throw new ValidationError('Scenario has no tip version');
+    try {
+      return await this.store.withLock(async () => {
+        const catalog = await this.store.readCatalog();
+        const scenario = catalog.scenarios.find((s) => s.id === opts.scenarioId);
+        if (!scenario) throw new NotFoundError(`Scenario not found: ${opts.scenarioId}`);
+        if (scenario.isMain) {
+          throw new ValidationError('Cannot ask for review from Main — create a scenario first');
+        }
+        const project = catalog.projects.find((p) => p.id === scenario.projectId);
+        if (!project) throw new NotFoundError(`Project not found: ${scenario.projectId}`);
+        const main = catalog.scenarios.find((s) => s.id === project.mainScenarioId);
+        if (!main?.tipVersionId) throw new ValidationError('Main has no tip version');
+        if (!scenario.tipVersionId) throw new ValidationError('Scenario has no tip version');
 
-    const now = new Date().toISOString();
-    const review: Review = {
-      id: this.store.newId(),
-      projectId: scenario.projectId,
-      scenarioId: scenario.id,
-      baseVersionId: main.tipVersionId,
-      compareVersionId: scenario.tipVersionId,
-      author: opts.author.trim() || 'anonymous',
-      note: opts.note?.trim() || undefined,
-      status: 'open',
-      createdAt: now,
-      updatedAt: now,
-    };
-    meta.reviews.push(review);
-    await this.store.writeMeta(meta);
-    return review;
+        const now = new Date().toISOString();
+        const review: Review = {
+          id: this.store.newId(),
+          projectId: scenario.projectId,
+          scenarioId: scenario.id,
+          baseVersionId: main.tipVersionId,
+          compareVersionId: scenario.tipVersionId,
+          author: opts.author.trim() || 'anonymous',
+          note: opts.note?.trim() || undefined,
+          status: 'open',
+          createdAt: now,
+          updatedAt: now,
+        };
+        catalog.reviews.push(review);
+        await this.store.writeCatalog(catalog);
+        return review;
+      });
+    } catch (err) {
+      if (err instanceof NotFoundError || err instanceof ValidationError) throw err;
+      mapStoreConflict(err);
+    }
   }
 
   async listReviews(projectId: string): Promise<Review[]> {
-    const meta = await this.store.readMeta();
-    const project = meta.projects.find((p) => p.id === projectId);
+    const catalog = await this.store.readCatalog();
+    const project = catalog.projects.find((p) => p.id === projectId);
     if (!project) throw new NotFoundError(`Project not found: ${projectId}`);
-    return meta.reviews
+    return catalog.reviews
       .filter((r) => r.projectId === projectId)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 
   async getReview(reviewId: string): Promise<Review> {
-    const meta = await this.store.readMeta();
-    const review = meta.reviews.find((r) => r.id === reviewId);
+    const catalog = await this.store.readCatalog();
+    const review = catalog.reviews.find((r) => r.id === reviewId);
     if (!review) throw new NotFoundError(`Review not found: ${reviewId}`);
     return review;
   }
@@ -452,17 +557,24 @@ export class ProjectService {
     status: 'changes-requested' | 'closed',
     note?: string,
   ): Promise<Review> {
-    const meta = await this.store.readMeta();
-    const review = meta.reviews.find((r) => r.id === reviewId);
-    if (!review) throw new NotFoundError(`Review not found: ${reviewId}`);
-    if (review.status === 'combined') {
-      throw new ValidationError('Review already combined');
+    try {
+      return await this.store.withLock(async () => {
+        const catalog = await this.store.readCatalog();
+        const review = catalog.reviews.find((r) => r.id === reviewId);
+        if (!review) throw new NotFoundError(`Review not found: ${reviewId}`);
+        if (review.status === 'combined') {
+          throw new ValidationError('Review already combined');
+        }
+        review.status = status;
+        review.updatedAt = new Date().toISOString();
+        if (note?.trim()) review.note = note.trim();
+        await this.store.writeCatalog(catalog);
+        return review;
+      });
+    } catch (err) {
+      if (err instanceof NotFoundError || err instanceof ValidationError) throw err;
+      mapStoreConflict(err);
     }
-    review.status = status;
-    review.updatedAt = new Date().toISOString();
-    if (note?.trim()) review.note = note.trim();
-    await this.store.writeMeta(meta);
-    return review;
   }
 
   async combineReview(opts: {
@@ -471,8 +583,8 @@ export class ProjectService {
     message?: string;
     resolutions?: Record<string, ResolutionChoice>;
   }): Promise<{ review: Review; version: Version; merge: MergeResult }> {
-    const meta = await this.store.readMeta();
-    const review = meta.reviews.find((r) => r.id === opts.reviewId);
+    const catalog = await this.store.readCatalog();
+    const review = catalog.reviews.find((r) => r.id === opts.reviewId);
     if (!review) throw new NotFoundError(`Review not found: ${opts.reviewId}`);
     if (review.status === 'combined') {
       throw new ValidationError('Review already combined');
@@ -481,16 +593,15 @@ export class ProjectService {
       throw new ValidationError('Review is closed');
     }
 
-    const project = meta.projects.find((p) => p.id === review.projectId);
+    const project = catalog.projects.find((p) => p.id === review.projectId);
     if (!project) throw new NotFoundError(`Project not found: ${review.projectId}`);
-    const main = meta.scenarios.find((s) => s.id === project.mainScenarioId);
+    const main = catalog.scenarios.find((s) => s.id === project.mainScenarioId);
     if (!main) throw new NotFoundError('Main scenario missing');
 
-    const baseVer = meta.versions.find((v) => v.id === review.baseVersionId);
-    const compareVer = meta.versions.find((v) => v.id === review.compareVersionId);
-    // Ours = current Main tip (or frozen base); design: Ours = Main tip, Theirs = scenario tip
+    const baseVer = await this.store.getVersion(review.baseVersionId);
+    const compareVer = await this.store.getVersion(review.compareVersionId);
     const mainTipId = main.tipVersionId ?? review.baseVersionId;
-    const oursVer = meta.versions.find((v) => v.id === mainTipId) ?? baseVer;
+    const oursVer = (await this.store.getVersion(mainTipId)) ?? baseVer;
     if (!baseVer || !compareVer || !oursVer) {
       throw new NotFoundError('Review versions missing');
     }
@@ -515,6 +626,7 @@ export class ProjectService {
     const snapshotHash = await this.store.putSnapshot(merge.snapshot);
     const now = new Date().toISOString();
     const versionId = this.store.newId();
+    const expectedTip = main.tipVersionId;
     const version: Version = {
       id: versionId,
       projectId: review.projectId,
@@ -528,13 +640,29 @@ export class ProjectService {
 
     const exportBuf = await writeXlsx(merge.snapshot);
     await this.store.putXlsxArtefact(versionId, exportBuf);
+    await this.store.putVersion(version);
 
-    main.tipVersionId = versionId;
-    meta.versions.push(version);
-    review.status = 'combined';
-    review.updatedAt = now;
-    await this.store.writeMeta(meta);
+    try {
+      await this.store.casScenarioTip(main.id, expectedTip, versionId);
+    } catch (err) {
+      mapStoreConflict(err);
+    }
 
-    return { review, version, merge };
+    try {
+      await this.store.withLock(async () => {
+        const cat = await this.store.readCatalog();
+        const rev = cat.reviews.find((r) => r.id === opts.reviewId);
+        if (rev) {
+          rev.status = 'combined';
+          rev.updatedAt = now;
+          await this.store.writeCatalog(cat);
+        }
+      });
+    } catch (err) {
+      mapStoreConflict(err);
+    }
+
+    const updated = await this.getReview(opts.reviewId);
+    return { review: updated, version, merge };
   }
 }

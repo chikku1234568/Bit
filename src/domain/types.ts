@@ -1,6 +1,7 @@
 /**
- * Bit domain types (M2).
- * One workbook = one Project. Main is the default scenario tip pointer.
+ * Bit domain types.
+ * Collaboration unit = Bit project (not one Excel file).
+ * Main is the default scenario tip pointer.
  */
 
 export interface Project {
@@ -32,6 +33,11 @@ export interface Version {
   message: string;
   /** Content-addressed snapshot blob hash. */
   snapshotHash: string;
+  /**
+   * When this Main tip was created by Promote (Make this Main), the version
+   * that was promoted. Snapshot may reuse the same hash.
+   */
+  promotedFromVersionId?: string;
 }
 
 export interface ProjectDetail extends Project {
