@@ -1,6 +1,10 @@
 export type {
+  BorderEdge,
   Cell,
+  CellAlignment,
+  CellBorders,
   CellFormat,
+  FreezePane,
   Sheet,
   SheetDimensions,
   WorkbookSnapshot,

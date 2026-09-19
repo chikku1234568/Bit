@@ -3,7 +3,8 @@
  * No Fastify / ExcelJS / fs. Address-stable only.
  */
 
-import type { Cell, CellFormat, WorkbookSnapshot } from '../xlsx/types.js';
+import { fmtEqual } from '../xlsx/format.js';
+import type { Cell, FreezePane, Sheet, WorkbookSnapshot } from '../xlsx/types.js';
 
 export interface CellConflict {
   sheet: string;
@@ -25,24 +26,13 @@ export interface MergeResult {
   autoChangeCount: number;
 }
 
-function normalizeFmt(fmt: CellFormat | undefined): CellFormat | null {
-  if (!fmt) return null;
-  const out: CellFormat = {};
-  if (fmt.numFmt !== undefined) out.numFmt = fmt.numFmt;
-  if (fmt.bold !== undefined) out.bold = fmt.bold;
-  if (fmt.italic !== undefined) out.italic = fmt.italic;
-  if (fmt.fill !== undefined) out.fill = fmt.fill;
-  if (fmt.fontColor !== undefined) out.fontColor = fmt.fontColor;
-  return Object.keys(out).length === 0 ? null : out;
-}
-
 /** Cell equality: v, f, and tracked fmt match (normalised). */
 export function cellsEqual(a: Cell | null | undefined, b: Cell | null | undefined): boolean {
   if (!a && !b) return true;
   if (!a || !b) return false;
   if ((a.f ?? null) !== (b.f ?? null)) return false;
   if (a.v !== b.v) return false;
-  return JSON.stringify(normalizeFmt(a.fmt)) === JSON.stringify(normalizeFmt(b.fmt));
+  return fmtEqual(a.fmt, b.fmt);
 }
 
 function cloneCell(c: Cell | null | undefined): Cell | null {
@@ -113,6 +103,81 @@ function resolveCell(
   if (hasO && !hasT) return { side: 'ours' };
   if (!hasO && hasT) return { side: 'theirs' };
   return { side: 'base' };
+}
+
+function eqJson(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+}
+
+/** Conflict on layout → keep ours (Main) so Combine is not blocked on column width. */
+function threeWayScalar<T>(base: T | undefined, ours: T | undefined, theirs: T | undefined): T | undefined {
+  if (eqJson(ours, theirs)) return ours;
+  if (eqJson(base, ours)) return theirs;
+  if (eqJson(base, theirs)) return ours;
+  return ours;
+}
+
+function threeWayMap(
+  base?: Record<string, number>,
+  ours?: Record<string, number>,
+  theirs?: Record<string, number>,
+): Record<string, number> | undefined {
+  const keys = new Set([
+    ...Object.keys(base ?? {}),
+    ...Object.keys(ours ?? {}),
+    ...Object.keys(theirs ?? {}),
+  ]);
+  const out: Record<string, number> = {};
+  for (const k of keys) {
+    const v = threeWayScalar(base?.[k], ours?.[k], theirs?.[k]);
+    if (v != null) out[k] = v;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+function threeWaySet<T extends string | number>(
+  base?: T[],
+  ours?: T[],
+  theirs?: T[],
+): T[] | undefined {
+  const b = new Set(base ?? []);
+  const o = new Set(ours ?? []);
+  const t = new Set(theirs ?? []);
+  const all = new Set<T>([...(base ?? []), ...(ours ?? []), ...(theirs ?? [])]);
+  const out: T[] = [];
+  for (const item of all) {
+    const inB = b.has(item);
+    const inO = o.has(item);
+    const inT = t.has(item);
+    let keep = false;
+    if (inO === inT) keep = inO;
+    else if (inB === inO) keep = inT;
+    else if (inB === inT) keep = inO;
+    else keep = inO;
+    if (keep) out.push(item);
+  }
+  if (out.length === 0) return undefined;
+  return out.sort((a, b2) => (a < b2 ? -1 : a > b2 ? 1 : 0));
+}
+
+function mergeSheetLayout(base?: Sheet, ours?: Sheet, theirs?: Sheet): Partial<Sheet> {
+  const freeze = threeWayScalar<FreezePane | undefined>(
+    base?.freeze,
+    ours?.freeze,
+    theirs?.freeze,
+  );
+  const layout: Partial<Sheet> = {
+    columnWidths: threeWayMap(base?.columnWidths, ours?.columnWidths, theirs?.columnWidths),
+    rowHeights: threeWayMap(base?.rowHeights, ours?.rowHeights, theirs?.rowHeights),
+    hiddenColumns: threeWaySet(base?.hiddenColumns, ours?.hiddenColumns, theirs?.hiddenColumns),
+    hiddenRows: threeWaySet(base?.hiddenRows, ours?.hiddenRows, theirs?.hiddenRows),
+    merges: threeWaySet(base?.merges, ours?.merges, theirs?.merges),
+    hidden: threeWayScalar(base?.hidden, ours?.hidden, theirs?.hidden),
+    veryHidden: threeWayScalar(base?.veryHidden, ours?.veryHidden, theirs?.veryHidden),
+    tabColor: threeWayScalar(base?.tabColor, ours?.tabColor, theirs?.tabColor),
+    freeze,
+  };
+  return layout;
 }
 
 function pick(
@@ -296,9 +361,15 @@ export function mergeSnapshots(
     maxCol = Math.max(1, ...dims.map((d) => d.cols));
 
     if (inOurs || inTheirs) {
+      const layout = mergeSheetLayout(
+        base.sheets[sheetName],
+        ours.sheets[sheetName],
+        theirs.sheets[sheetName],
+      );
       resultSheets[sheetName] = {
         dimensions: { rows: maxRow, cols: maxCol },
         cells: outCells,
+        ...layout,
       };
       if (!seen.has(sheetName)) {
         resultOrder.push(sheetName);

@@ -683,3 +683,57 @@ describe('M6 API', () => {
     expect(body.version.parentIds).toHaveLength(2);
   });
 });
+
+describe('Agent + version graph', () => {
+  let dataDir: string;
+  let app: Awaited<ReturnType<typeof buildApp>>['app'];
+  let service: ProjectService;
+
+  beforeEach(async () => {
+    dataDir = await mkdtemp(join(tmpdir(), 'bit-agent-'));
+    const built = await buildApp({ dataDir, logger: false });
+    app = built.app;
+    service = built.service;
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    await app.close();
+    await rm(dataDir, { recursive: true, force: true });
+  });
+
+  it('GET /agent/status reports data dir', async () => {
+    const res = await app.inject({ method: 'GET', url: '/agent/status' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().ok).toBe(true);
+    expect(res.json().dataDir).toBe(dataDir);
+    expect(res.json().addin).toBe(true);
+  });
+
+  it('graph has parent→child edges and scenario tips', async () => {
+    const project = await service.createProject({
+      name: 'Graph',
+      author: 'Alex',
+      xlsxBuffer: await writeXlsx(budgetSnapshot()),
+    });
+    const scenario = await service.createScenario({
+      projectId: project.id,
+      name: 'Tax',
+    });
+    const scenVer = await service.saveVersion({
+      projectId: project.id,
+      scenarioId: scenario.id,
+      author: 'Jordan',
+      message: 'On tax',
+      xlsxBuffer: await writeXlsx(budgetSnapshot({ B2: { v: 9, f: null } })),
+    });
+    const res = await app.inject({ method: 'GET', url: `/projects/${project.id}/graph` });
+    expect(res.statusCode).toBe(200);
+    const graph = res.json();
+    expect(graph.nodes.length).toBe(2);
+    expect(graph.edges.some((e: { from: string; to: string }) => e.to === scenVer.id)).toBe(
+      true,
+    );
+    expect(graph.nodes.find((n: { id: string }) => n.id === scenVer.id).isTip).toBe(true);
+  });
+});

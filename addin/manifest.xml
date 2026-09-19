@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<OfficeApp
+  xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
+  xmlns:ov="http://schemas.microsoft.com/office/taskpaneappversionoverrides"
+  xsi:type="TaskPaneApp">
+  <Id>6f8a1c2e-4d3b-4e91-a7c5-9b2e8f01d4a3</Id>
+  <Version>1.0.0.1</Version>
+  <ProviderName>Bit</ProviderName>
+  <DefaultLocale>en-US</DefaultLocale>
+  <DisplayName DefaultValue="Bit"/>
+  <Description DefaultValue="Version control for Excel. Local folder. Save version, scenarios, history, graph."/>
+  <IconUrl DefaultValue="http://127.0.0.1:5173/addin/icon-32.png"/>
+  <HighResolutionIconUrl DefaultValue="http://127.0.0.1:5173/addin/icon-64.png"/>
+  <SupportUrl DefaultValue="http://127.0.0.1:5173/"/>
+  <AppDomains>
+    <AppDomain>http://127.0.0.1:5173</AppDomain>
+    <AppDomain>http://localhost:5173</AppDomain>
+    <AppDomain>http://127.0.0.1:3001</AppDomain>
+  </AppDomains>
+  <Hosts>
+    <Host Name="Workbook"/>
+  </Hosts>
+  <Requirements>
+    <Sets DefaultMinVersion="1.1">
+      <Set Name="ExcelApi" MinVersion="1.1"/>
+    </Sets>
+  </Requirements>
+  <DefaultSettings>
+    <SourceLocation DefaultValue="http://127.0.0.1:5173/addin.html"/>
+  </DefaultSettings>
+  <Permissions>ReadWriteDocument</Permissions>
+  <VersionOverrides xmlns="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="VersionOverridesV1_0">
+    <Hosts>
+      <Host xsi:type="Workbook">
+        <DesktopFormFactor>
+          <GetStarted>
+            <Title resid="GetStarted.Title"/>
+            <Description resid="GetStarted.Description"/>
+            <LearnMoreUrl resid="GetStarted.LearnMoreUrl"/>
+          </GetStarted>
+          <FunctionFile resid="Commands.Url"/>
+          <ExtensionPoint xsi:type="PrimaryCommandSurface">
+            <OfficeTab id="TabHome">
+              <Group id="Bit.Group">
+                <Label resid="Bit.GroupLabel"/>
+                <Icon>
+                  <bt:Image size="16" resid="Bit.Icon16"/>
+                  <bt:Image size="32" resid="Bit.Icon32"/>
+                  <bt:Image size="80" resid="Bit.Icon80"/>
+                </Icon>
+                <Control xsi:type="Button" id="Bit.OpenPane">
+                  <Label resid="Bit.PaneLabel"/>
+                  <Supertip>
+                    <Title resid="Bit.PaneLabel"/>
+                    <Description resid="Bit.PaneTip"/>
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="Bit.Icon16"/>
+                    <bt:Image size="32" resid="Bit.Icon32"/>
+                    <bt:Image size="80" resid="Bit.Icon80"/>
+                  </Icon>
+                  <Action xsi:type="ShowTaskpane">
+                    <TaskpaneId>BitTaskpane</TaskpaneId>
+                    <SourceLocation resid="Taskpane.Url"/>
+                  </Action>
+                </Control>
+              </Group>
+            </OfficeTab>
+          </ExtensionPoint>
+        </DesktopFormFactor>
+      </Host>
+    </Hosts>
+    <Resources>
+      <bt:Images>
+        <bt:Image id="Bit.Icon16" DefaultValue="http://127.0.0.1:5173/addin/icon-16.png"/>
+        <bt:Image id="Bit.Icon32" DefaultValue="http://127.0.0.1:5173/addin/icon-32.png"/>
+        <bt:Image id="Bit.Icon80" DefaultValue="http://127.0.0.1:5173/addin/icon-80.png"/>
+      </bt:Images>
+      <bt:Urls>
+        <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="http://127.0.0.1:5173/"/>
+        <bt:Url id="Commands.Url" DefaultValue="http://127.0.0.1:5173/addin.html"/>
+        <bt:Url id="Taskpane.Url" DefaultValue="http://127.0.0.1:5173/addin.html"/>
+      </bt:Urls>
+      <bt:ShortStrings>
+        <bt:String id="GetStarted.Title" DefaultValue="Bit is ready"/>
+        <bt:String id="Bit.GroupLabel" DefaultValue="Bit"/>
+        <bt:String id="Bit.PaneLabel" DefaultValue="Bit"/>
+      </bt:ShortStrings>
+      <bt:LongStrings>
+        <bt:String id="GetStarted.Description" DefaultValue="Save versions of this workbook to a folder on this PC."/>
+        <bt:String id="Bit.PaneTip" DefaultValue="Open Bit: save version, scenarios, history, graph"/>
+      </bt:LongStrings>
+    </Resources>
+  </VersionOverrides>
+</OfficeApp>

@@ -2,7 +2,13 @@
 
 Version control for Excel. **M6** adds Ask for review, Needs a decision, and Combine into Main.
 
-Practical onboarding: see **[BIT-GUIDE.md](BIT-GUIDE.md)**.
+Excel add-in (local folder): **[docs/EXCEL-ADDIN.md](docs/EXCEL-ADDIN.md)** — `scripts\start-bit.cmd` then sideload `addin\manifest.xml`.
+
+Practical onboarding: **[BIT-GUIDE.md](BIT-GUIDE.md)**.
+
+- Repo map: **[docs/REPO-STRUCTURE.md](docs/REPO-STRUCTURE.md)**
+- What works and how to use it: **[docs/FUNCTIONALITY.md](docs/FUNCTIONALITY.md)**
+- Alex / Jordan click path: **[docs/E2E-DEMO.md](docs/E2E-DEMO.md)**
 
 ## Install
 
@@ -110,9 +116,11 @@ fixtures/          # Sample budget workbook
 
 ## Fidelity bar (tracked)
 
-- Sheet names and order
+- Sheet names and order; hidden / very-hidden sheets; tab colour; freeze panes
 - Cell values (`v`) and formulas (`f`)
-- Basic formatting: bold, italic, fill colour, font colour, number format
+- Formatting: bold, italic, underline, strike, font name/size, fill, font colour, number format, borders, alignment/wrap
+- Layout: column widths, row heights, hidden rows/cols, merged ranges
+- Theme and indexed colours resolved to `#RRGGBB` when Excel stores them that way
 
 ## Out of scope (later milestones)
 

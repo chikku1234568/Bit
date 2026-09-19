@@ -86,4 +86,24 @@ describe('M4 diffSnapshots', () => {
     expect(r.changes.some((c) => c.kind === 'cell-value')).toBe(false);
     expect(r.changes).toEqual([]);
   });
+
+  it('column width and freeze show as layout changes', () => {
+    const base = snap({ A1: { v: 1, f: null } });
+    const compare: WorkbookSnapshot = {
+      sheetOrder: ['Budget'],
+      sheets: {
+        Budget: {
+          dimensions: { rows: 10, cols: 5 },
+          cells: { A1: { v: 1, f: null } },
+          columnWidths: { A: 24 },
+          freeze: { row: 1, col: 0 },
+        },
+      },
+    };
+    const r = diffSnapshots(base, compare);
+    expect(r.changes.some((c) => c.kind === 'col-width' && c.address === 'col:A')).toBe(
+      true,
+    );
+    expect(r.changes.some((c) => c.kind === 'sheet-freeze')).toBe(true);
+  });
 });

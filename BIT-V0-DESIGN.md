@@ -181,7 +181,8 @@ Canonical snapshot stored per version (JSON or equivalent):
 
 - Sheet names and order (structure)
 - Per-cell value (`v`) and formula (`f`)
-- Basic formatting: bold/italic, fill colour, font colour, number format (extend only if cheap)
+- Formatting: bold/italic/underline/strike, font name/size, fill, font colour, number format, borders, alignment
+- Layout: column widths, row heights, hidden rows/cols, merges, freeze panes, sheet hidden, tab colour
 
 ### 8.2 Not tracked in V0
 

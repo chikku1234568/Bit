@@ -2,7 +2,8 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, beforeAll } from 'vitest';
-import type { Cell, CellFormat, WorkbookSnapshot } from './types.js';
+import type { Cell, WorkbookSnapshot } from './types.js';
+import { fmtEqual, normalizeHex } from './format.js';
 import { parseXlsx } from './parse.js';
 import { writeXlsx } from './write.js';
 
@@ -17,11 +18,22 @@ function buildBudgetSnapshot(): WorkbookSnapshot {
     sheets: {
       Budget: {
         dimensions: { rows: 12, cols: 6 },
+        columnWidths: { A: 18, B: 14, C: 14, D: 16 },
+        rowHeights: { '1': 22 },
+        freeze: { row: 1, col: 1 },
+        merges: ['A8:B8'],
+        hiddenRows: [3],
+        tabColor: '#4472C4',
         cells: {
           A1: {
             v: 'Line Item',
             f: null,
-            fmt: { bold: true, fill: '#4472C4', fontColor: '#FFFFFF' },
+            fmt: {
+              bold: true,
+              fill: '#4472C4',
+              fontColor: '#FFFFFF',
+              alignment: { horizontal: 'center', vertical: 'middle' },
+            },
           },
           B1: {
             v: 'Q1',
@@ -38,8 +50,28 @@ function buildBudgetSnapshot(): WorkbookSnapshot {
             f: null,
             fmt: { bold: true, fill: '#4472C4', fontColor: '#FFFFFF' },
           },
-          A2: { v: 'Revenue', f: null, fmt: { bold: true } },
-          B2: { v: 100000, f: null, fmt: { numFmt: '#,##0.00' } },
+          A2: {
+            v: 'Revenue',
+            f: null,
+            fmt: {
+              bold: true,
+              underline: true,
+              alignment: { wrapText: true },
+            },
+          },
+          B2: {
+            v: 100000,
+            f: null,
+            fmt: {
+              numFmt: '#,##0.00',
+              borders: {
+                top: { style: 'thin', color: '#000000' },
+                bottom: { style: 'thin', color: '#000000' },
+                left: { style: 'thin', color: '#000000' },
+                right: { style: 'thin', color: '#000000' },
+              },
+            },
+          },
           C2: { v: 110000, f: null, fmt: { numFmt: '#,##0.00' } },
           D2: {
             v: null,
@@ -76,12 +108,16 @@ function buildBudgetSnapshot(): WorkbookSnapshot {
           B7: {
             v: null,
             f: '=B4*B6',
-            fmt: { numFmt: '#,##0.00', fontColor: '#FF0000' },
+            fmt: { numFmt: '#,##0.00', fontColor: '#FF0000', strike: true },
           },
+          A8: { v: 'Source notes', f: null, fmt: { italic: true, fontSize: 9 } },
+          C6: { v: null, f: null, fmt: { fill: '#F4B183' } },
         },
       },
       Assumptions: {
         dimensions: { rows: 3, cols: 2 },
+        columnWidths: { C: 12 },
+        hiddenColumns: ['C'],
         cells: {
           A1: { v: 'Tax Rate', f: null, fmt: { bold: true } },
           B1: { v: 0.21, f: null, fmt: { numFmt: '0.00%', fill: '#E2EFDA' } },
@@ -93,33 +129,7 @@ function buildBudgetSnapshot(): WorkbookSnapshot {
   };
 }
 
-function normalizeHex(c: string | undefined): string | undefined {
-  if (!c) return undefined;
-  return c.replace(/^#/, '').toUpperCase();
-}
 
-function fmtEqual(a?: CellFormat, b?: CellFormat): boolean {
-  if (!a && !b) return true;
-  if (!a || !b) {
-    // Treat missing vs empty-equivalent as equal for unset flags
-    const left = a ?? {};
-    const right = b ?? {};
-    return (
-      left.numFmt === right.numFmt &&
-      !!left.bold === !!right.bold &&
-      !!left.italic === !!right.italic &&
-      normalizeHex(left.fill) === normalizeHex(right.fill) &&
-      normalizeHex(left.fontColor) === normalizeHex(right.fontColor)
-    );
-  }
-  return (
-    (a.numFmt ?? undefined) === (b.numFmt ?? undefined) &&
-    !!a.bold === !!b.bold &&
-    !!a.italic === !!b.italic &&
-    normalizeHex(a.fill) === normalizeHex(b.fill) &&
-    normalizeHex(a.fontColor) === normalizeHex(b.fontColor)
-  );
-}
 
 function cellEqual(a: Cell, b: Cell): boolean {
   // Formula is authoritative; compare f and tracked fmt.
@@ -151,6 +161,15 @@ function assertSnapshotRoundTrip(
     const oAddrs = Object.keys(oSheet.cells).sort();
     const pAddrs = Object.keys(pSheet.cells).sort();
     expect(pAddrs).toEqual(oAddrs);
+    expect(pSheet.columnWidths).toEqual(oSheet.columnWidths);
+    expect(pSheet.rowHeights).toEqual(oSheet.rowHeights);
+    expect(pSheet.merges).toEqual(oSheet.merges);
+    expect(pSheet.freeze).toEqual(oSheet.freeze);
+    expect(pSheet.hiddenRows).toEqual(oSheet.hiddenRows);
+    expect(!!pSheet.hidden).toBe(!!oSheet.hidden);
+    if (oSheet.tabColor) {
+      expect(normalizeHex(pSheet.tabColor)).toBe(normalizeHex(oSheet.tabColor));
+    }
 
     for (const addr of oAddrs) {
       const ok = cellEqual(oSheet.cells[addr], pSheet.cells[addr]);
@@ -228,8 +247,34 @@ describe('xlsx bridge round-trip', () => {
   });
 
   it('commits fixture sample-budget.xlsx for CLI demos', async () => {
-    // already written in beforeAll
     const again = await parseXlsx(SAMPLE_PATH);
     expect(Object.keys(again.sheets.Budget.cells).length).toBeGreaterThan(10);
+  });
+
+  it('round-trips borders, alignment, underline, strike, layout', () => {
+    const b2 = afterParse.sheets.Budget.cells.B2;
+    expect(b2.fmt?.borders?.top?.style).toBe('thin');
+    expect(normalizeHex(b2.fmt?.borders?.top?.color)).toBe('000000');
+
+    const a2 = afterParse.sheets.Budget.cells.A2;
+    expect(a2.fmt?.underline).toBeTruthy();
+    expect(a2.fmt?.alignment?.wrapText).toBe(true);
+
+    const b7 = afterParse.sheets.Budget.cells.B7;
+    expect(b7.fmt?.strike).toBe(true);
+
+    const c6 = afterParse.sheets.Budget.cells.C6;
+    expect(c6.v).toBeNull();
+    expect(c6.f).toBeNull();
+    expect(normalizeHex(c6.fmt?.fill)).toBe('F4B183');
+
+    const budget = afterParse.sheets.Budget;
+    expect(budget.columnWidths?.A).toBeGreaterThan(10);
+    expect(budget.rowHeights?.['1']).toBe(22);
+    expect(budget.merges).toContain('A8:B8');
+    expect(budget.freeze).toEqual({ row: 1, col: 1 });
+    expect(budget.hiddenRows).toContain(3);
+    expect(normalizeHex(budget.tabColor)).toBe('4472C4');
+    expect(afterParse.sheets.Assumptions.hiddenColumns).toContain('C');
   });
 });

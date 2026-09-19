@@ -34,7 +34,7 @@ Reset store: delete `./data/` (gitignored). Meta + blobs + cached `.xlsx` live t
 ## Key paths
 
 ```
-src/xlsx/           # parseXlsx / writeXlsx — import only; do not reimplement
+src/xlsx/           # parseXlsx / writeXlsx / format helpers — do not reimplement
 src/domain/         # Project, Scenario, Version types
 src/store/          # Local demo store: data/meta.json + blobs/ + xlsx/
 src/service/        # ProjectService
@@ -70,6 +70,17 @@ UI: **You are** in the top bar → `localStorage` key `bit-author`.
 | Conflict | **Needs a decision** |
 | Clone/pull/push | **Sync** |
 | Checkout | **Open this version** / **Switch scenario** |
+
+## Snapshot fidelity (tracked)
+
+- Values, formulas, sheet names/order
+- Font: bold, italic, underline, strike, name, size, colour
+- Fill, number format, borders, alignment/wrap
+- Column widths, row heights, hidden rows/cols, merges
+- Freeze panes, sheet hidden, tab colour
+- Theme/indexed colours resolved to `#RRGGBB` when possible
+
+Not tracked: charts, pivots, images, validation, conditional formatting, named ranges, comments, VBA.
 
 ## Web toolchain pin
 

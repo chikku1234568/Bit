@@ -257,3 +257,60 @@ export async function closeReview(opts: {
     }),
   );
 }
+
+export interface AgentStatus {
+  ok: boolean;
+  dataDir: string;
+  projectCount: number;
+  addin: boolean;
+}
+
+export async function getAgentStatus(): Promise<AgentStatus> {
+  return json(await fetch(`${API_BASE}/agent/status`));
+}
+
+export async function setDataDir(dataDir: string): Promise<AgentStatus & { dataDir: string }> {
+  return json(
+    await fetch(`${API_BASE}/agent/data-dir`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dataDir }),
+    }),
+  );
+}
+
+export async function pickFolder(): Promise<{ ok: boolean; dataDir: string }> {
+  return json(
+    await fetch(`${API_BASE}/agent/pick-folder`, {
+      method: 'POST',
+    }),
+  );
+}
+
+export interface GraphNode {
+  id: string;
+  message: string;
+  author: string;
+  timestamp: string;
+  scenarioId: string;
+  scenarioName: string;
+  isMain: boolean;
+  isTip: boolean;
+  parentIds: string[];
+}
+
+export interface VersionGraph {
+  nodes: GraphNode[];
+  edges: Array<{ from: string; to: string }>;
+  scenarios: Array<{ id: string; name: string; isMain: boolean; tipVersionId: string | null }>;
+}
+
+export async function getProjectGraph(projectId: string): Promise<VersionGraph> {
+  return json(await fetch(`${API_BASE}/projects/${projectId}/graph`));
+}
+
+export async function getVersionXlsxBase64(
+  versionId: string,
+): Promise<{ filename: string; base64: string }> {
+  return json(await fetch(`${API_BASE}/versions/${versionId}/xlsx/base64`));
+}

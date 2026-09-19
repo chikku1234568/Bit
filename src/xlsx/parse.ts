@@ -1,41 +1,24 @@
 import ExcelJS from 'exceljs';
 import { readFile } from 'node:fs/promises';
-import type { Cell, CellFormat, Sheet, WorkbookSnapshot } from './types.js';
-
-function argbToHex(argb: string | undefined): string | undefined {
-  if (!argb) return undefined;
-  const cleaned = argb.replace(/^#/, '').toUpperCase();
-  // ExcelJS often uses AARRGGBB
-  if (cleaned.length === 8) {
-    return `#${cleaned.slice(2)}`;
-  }
-  if (cleaned.length === 6) {
-    return `#${cleaned}`;
-  }
-  return undefined;
-}
-
-function extractFill(cell: ExcelJS.Cell): string | undefined {
-  const fill = cell.fill;
-  if (!fill || fill.type !== 'pattern') return undefined;
-  const pattern = fill as ExcelJS.FillPattern;
-  if (pattern.pattern === 'none') return undefined;
-  const fg = pattern.fgColor;
-  if (!fg) return undefined;
-  if ('argb' in fg && typeof fg.argb === 'string') {
-    return argbToHex(fg.argb);
-  }
-  return undefined;
-}
-
-function extractFontColor(cell: ExcelJS.Cell): string | undefined {
-  const color = cell.font?.color;
-  if (!color) return undefined;
-  if ('argb' in color && typeof color.argb === 'string') {
-    return argbToHex(color.argb);
-  }
-  return undefined;
-}
+import {
+  DEFAULT_COL_WIDTHS,
+  DEFAULT_FONT_NAME,
+  DEFAULT_FONT_SIZE,
+  DEFAULT_ROW_HEIGHT,
+  colToLetter,
+  excelColorToHex,
+  isMergeSlave,
+  type ExcelColorLike,
+} from './format.js';
+import type {
+  Cell,
+  CellAlignment,
+  CellBorders,
+  CellFormat,
+  FreezePane,
+  Sheet,
+  WorkbookSnapshot,
+} from './types.js';
 
 function normalizeFormula(formula: string | undefined): string | null {
   if (!formula) return null;
@@ -55,25 +38,75 @@ function cellValueToV(
     return value.toISOString();
   }
   if (typeof value === 'object') {
-    // Formula result object: { formula, result?, shareType?, ... }
     if ('result' in value) {
       const result = (value as { result?: ExcelJS.CellValue }).result;
       return cellValueToV(result ?? null);
     }
-    // Rich text
     if ('richText' in value && Array.isArray((value as ExcelJS.CellRichTextValue).richText)) {
       return (value as ExcelJS.CellRichTextValue).richText.map((p) => p.text).join('');
     }
-    // Hyperlink
     if ('text' in value && typeof (value as ExcelJS.CellHyperlinkValue).text === 'string') {
       return (value as ExcelJS.CellHyperlinkValue).text;
     }
-    // Error
     if ('error' in value) {
       return String((value as ExcelJS.CellErrorValue).error);
     }
   }
   return null;
+}
+
+function asColor(c: unknown): ExcelColorLike | undefined {
+  if (!c || typeof c !== 'object') return undefined;
+  return c as ExcelColorLike;
+}
+
+function extractFill(cell: ExcelJS.Cell): string | undefined {
+  const fill = cell.fill;
+  if (!fill || fill.type !== 'pattern') return undefined;
+  const pattern = fill as ExcelJS.FillPattern;
+  if (pattern.pattern === 'none') return undefined;
+  return excelColorToHex(asColor(pattern.fgColor));
+}
+
+function extractFontColor(cell: ExcelJS.Cell): string | undefined {
+  return excelColorToHex(asColor(cell.font?.color));
+}
+
+function extractBorders(cell: ExcelJS.Cell): CellBorders | undefined {
+  const b = cell.border;
+  if (!b) return undefined;
+  const edge = (
+    side: ExcelJS.Border | undefined,
+  ): { style?: string; color?: string } | undefined => {
+    if (!side || (!side.style && !side.color)) return undefined;
+    const out: { style?: string; color?: string } = {};
+    if (side.style) out.style = String(side.style);
+    const color = excelColorToHex(asColor(side.color));
+    if (color) out.color = color;
+    return out;
+  };
+  const out: CellBorders = {};
+  const top = edge(b.top);
+  const left = edge(b.left);
+  const bottom = edge(b.bottom);
+  const right = edge(b.right);
+  if (top) out.top = top;
+  if (left) out.left = left;
+  if (bottom) out.bottom = bottom;
+  if (right) out.right = right;
+  return Object.keys(out).length ? out : undefined;
+}
+
+function extractAlignment(cell: ExcelJS.Cell): CellAlignment | undefined {
+  const a = cell.alignment;
+  if (!a) return undefined;
+  const out: CellAlignment = {};
+  if (a.horizontal) out.horizontal = String(a.horizontal);
+  if (a.vertical) out.vertical = String(a.vertical);
+  if (a.wrapText) out.wrapText = true;
+  if (a.indent) out.indent = a.indent;
+  if (a.textRotation) out.textRotation = a.textRotation;
+  return Object.keys(out).length ? out : undefined;
 }
 
 function extractFormat(excelCell: ExcelJS.Cell): CellFormat | undefined {
@@ -82,36 +115,70 @@ function extractFormat(excelCell: ExcelJS.Cell): CellFormat | undefined {
   if (numFmt && numFmt !== 'General') {
     fmt.numFmt = numFmt;
   }
-  if (excelCell.font?.bold) fmt.bold = true;
-  if (excelCell.font?.italic) fmt.italic = true;
+  const font = excelCell.font;
+  if (font?.bold) fmt.bold = true;
+  if (font?.italic) fmt.italic = true;
+  if (font?.strike) fmt.strike = true;
+  if (font?.underline && font.underline !== false) {
+    fmt.underline = font.underline === true ? true : String(font.underline);
+  }
+  if (font?.name && font.name !== DEFAULT_FONT_NAME) {
+    fmt.fontName = font.name;
+  }
+  if (font?.size != null && font.size !== DEFAULT_FONT_SIZE) {
+    fmt.fontSize = font.size;
+  }
   const fill = extractFill(excelCell);
   if (fill) fmt.fill = fill;
   const fontColor = extractFontColor(excelCell);
-  if (fontColor) fmt.fontColor = fontColor;
+  if (fontColor && fontColor.replace(/^#/, '').toUpperCase() !== '000000') {
+    fmt.fontColor = fontColor;
+  }
+  const borders = extractBorders(excelCell);
+  if (borders) fmt.borders = borders;
+  const alignment = extractAlignment(excelCell);
+  if (alignment) fmt.alignment = alignment;
 
   if (Object.keys(fmt).length === 0) return undefined;
   return fmt;
 }
 
-function colToLetter(col: number): string {
-  let n = col;
-  let s = '';
-  while (n > 0) {
-    const rem = (n - 1) % 26;
-    s = String.fromCharCode(65 + rem) + s;
-    n = Math.floor((n - 1) / 26);
-  }
-  return s;
+function extractFreeze(ws: ExcelJS.Worksheet): FreezePane | undefined {
+  const views = ws.views;
+  if (!views || views.length === 0) return undefined;
+  const view = views[0];
+  if (view.state !== 'frozen' && view.state !== 'split') return undefined;
+  const row = view.ySplit ?? 0;
+  const col = view.xSplit ?? 0;
+  if (!row && !col) return undefined;
+  return { row, col };
+}
+
+function extractMerges(ws: ExcelJS.Worksheet): string[] | undefined {
+  const model = ws.model as { merges?: string[] } | undefined;
+  const list = model?.merges;
+  if (!Array.isArray(list) || list.length === 0) return undefined;
+  return [...list].sort();
 }
 
 function parseWorksheet(ws: ExcelJS.Worksheet): Sheet {
   const cells: Record<string, Cell> = {};
   let maxRow = 0;
   let maxCol = 0;
+  const columnWidths: Record<string, number> = {};
+  const rowHeights: Record<string, number> = {};
+  const hiddenColumns: string[] = [];
+  const hiddenRows: number[] = [];
+  const merges = extractMerges(ws);
 
   ws.eachRow({ includeEmpty: false }, (row, rowNumber) => {
-    row.eachCell({ includeEmpty: false }, (excelCell, colNumber) => {
-      maxRow = Math.max(maxRow, rowNumber);
+    maxRow = Math.max(maxRow, rowNumber);
+    if (row.height != null && row.height !== DEFAULT_ROW_HEIGHT) {
+      rowHeights[String(rowNumber)] = row.height;
+    }
+    if (row.hidden) hiddenRows.push(rowNumber);
+
+    row.eachCell({ includeEmpty: true }, (excelCell, colNumber) => {
       maxCol = Math.max(maxCol, colNumber);
 
       const address = `${colToLetter(colNumber)}${rowNumber}`;
@@ -123,7 +190,6 @@ function parseWorksheet(ws: ExcelJS.Worksheet): Sheet {
         formula = normalizeFormula((raw as ExcelJS.CellFormulaValue).formula);
         v = cellValueToV(raw);
       } else if (raw && typeof raw === 'object' && 'sharedFormula' in raw) {
-        // Prefer master formula if present; sharedFormula alone is the ref
         const shared = raw as ExcelJS.CellSharedFormulaValue;
         formula = normalizeFormula(shared.formula ?? shared.sharedFormula);
         v = cellValueToV(raw);
@@ -131,14 +197,12 @@ function parseWorksheet(ws: ExcelJS.Worksheet): Sheet {
         v = cellValueToV(raw);
       }
 
-      // Also check excelCell.formula getter when value didn't expose it
       if (!formula && excelCell.formula) {
         formula = normalizeFormula(excelCell.formula);
       }
 
       const fmt = extractFormat(excelCell);
-
-      // Skip truly empty cells (no value, no formula, no tracked fmt)
+      if (isMergeSlave(address, merges)) return;
       if (v === null && formula === null && !fmt) return;
 
       const cell: Cell = { v, f: formula };
@@ -147,20 +211,48 @@ function parseWorksheet(ws: ExcelJS.Worksheet): Sheet {
     });
   });
 
-  // Prefer ExcelJS reported dimensions when larger
+  const cols = ws.columns ?? [];
+  for (const col of cols) {
+    if (!col || col.number == null) continue;
+    const letter = colToLetter(col.number);
+    maxCol = Math.max(maxCol, col.number);
+    if (col.width != null && !DEFAULT_COL_WIDTHS.has(col.width)) {
+      columnWidths[letter] = col.width;
+    }
+    if (col.hidden) hiddenColumns.push(letter);
+  }
+
   const dim = ws.dimensions;
   if (dim) {
     maxRow = Math.max(maxRow, dim.bottom || 0);
     maxCol = Math.max(maxCol, dim.right || 0);
   }
 
-  return {
+  const sheet: Sheet = {
     dimensions: {
       rows: maxRow || 1,
       cols: maxCol || 1,
     },
     cells,
   };
+
+  if (Object.keys(columnWidths).length) sheet.columnWidths = columnWidths;
+  if (Object.keys(rowHeights).length) sheet.rowHeights = rowHeights;
+  if (hiddenColumns.length) sheet.hiddenColumns = hiddenColumns.sort();
+  if (hiddenRows.length) sheet.hiddenRows = hiddenRows.sort((a, b) => a - b);
+
+  if (merges) sheet.merges = merges;
+
+  if (ws.state === 'hidden') sheet.hidden = true;
+  if (ws.state === 'veryHidden') sheet.veryHidden = true;
+
+  const tab = excelColorToHex(asColor(ws.properties?.tabColor));
+  if (tab) sheet.tabColor = tab;
+
+  const freeze = extractFreeze(ws);
+  if (freeze) sheet.freeze = freeze;
+
+  return sheet;
 }
 
 /**
@@ -174,7 +266,6 @@ export async function parseXlsx(
   if (typeof input === 'string') {
     await workbook.xlsx.readFile(input);
   } else {
-    // ExcelJS accepts Buffer via stream-like load
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await workbook.xlsx.load(input as any);
   }

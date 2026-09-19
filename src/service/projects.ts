@@ -196,6 +196,62 @@ export class ProjectService {
       .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
   }
 
+  async getProjectGraph(projectId: string): Promise<{
+    nodes: Array<{
+      id: string;
+      message: string;
+      author: string;
+      timestamp: string;
+      scenarioId: string;
+      scenarioName: string;
+      isMain: boolean;
+      isTip: boolean;
+      parentIds: string[];
+    }>;
+    edges: Array<{ from: string; to: string }>;
+    scenarios: Array<{ id: string; name: string; isMain: boolean; tipVersionId: string | null }>;
+  }> {
+    const meta = await this.store.readMeta();
+    const project = meta.projects.find((p) => p.id === projectId);
+    if (!project) throw new NotFoundError(`Project not found: ${projectId}`);
+    const scenarios = meta.scenarios.filter((s) => s.projectId === projectId);
+    const scenarioById = new Map(scenarios.map((s) => [s.id, s]));
+    const tipIds = new Set(
+      scenarios.map((s) => s.tipVersionId).filter((id): id is string => !!id),
+    );
+    const versions = meta.versions.filter((v) => v.projectId === projectId);
+    const nodes = versions.map((v) => {
+      const sc = scenarioById.get(v.scenarioId);
+      return {
+        id: v.id,
+        message: v.message,
+        author: v.author,
+        timestamp: v.timestamp,
+        scenarioId: v.scenarioId,
+        scenarioName: sc?.name ?? 'Unknown',
+        isMain: sc?.isMain ?? false,
+        isTip: tipIds.has(v.id),
+        parentIds: v.parentIds,
+      };
+    });
+    const edges: Array<{ from: string; to: string }> = [];
+    for (const v of versions) {
+      for (const parent of v.parentIds) {
+        edges.push({ from: parent, to: v.id });
+      }
+    }
+    return {
+      nodes,
+      edges,
+      scenarios: scenarios.map((s) => ({
+        id: s.id,
+        name: s.name,
+        isMain: s.isMain,
+        tipVersionId: s.tipVersionId,
+      })),
+    };
+  }
+
   async getVersion(versionId: string): Promise<Version & { scenarioName: string }> {
     const meta = await this.store.readMeta();
     const version = meta.versions.find((v) => v.id === versionId);

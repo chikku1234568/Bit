@@ -12,7 +12,8 @@
     "api": "tsx src/api/server.ts",
     "dev:api": "tsx watch src/api/server.ts",
     "dev:web": "npm run dev --prefix web",
-    "dev": "npm run api"
+    "dev": "npm run api",
+    "addin": "npm run dev --prefix web"
   },
   "engines": {
     "node": ">=18"

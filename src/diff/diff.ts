@@ -3,12 +3,21 @@
  * No Fastify / ExcelJS / fs.
  */
 
-import type { Cell, CellFormat, WorkbookSnapshot } from '../xlsx/types.js';
+import { fmtEqual, normalizeFmt } from '../xlsx/format.js';
+import type { Cell, Sheet, WorkbookSnapshot } from '../xlsx/types.js';
 
 export type DiffKind =
   | 'sheet-add'
   | 'sheet-remove'
   | 'sheet-order'
+  | 'sheet-hidden'
+  | 'sheet-tab-color'
+  | 'sheet-freeze'
+  | 'col-width'
+  | 'row-height'
+  | 'col-hidden'
+  | 'row-hidden'
+  | 'merge'
   | 'cell-add'
   | 'cell-remove'
   | 'cell-value'
@@ -25,21 +34,6 @@ export interface DiffEntry {
 
 export interface DiffResult {
   changes: DiffEntry[];
-}
-
-function normalizeFmt(fmt: CellFormat | undefined): CellFormat | null {
-  if (!fmt) return null;
-  const out: CellFormat = {};
-  if (fmt.numFmt !== undefined) out.numFmt = fmt.numFmt;
-  if (fmt.bold !== undefined) out.bold = fmt.bold;
-  if (fmt.italic !== undefined) out.italic = fmt.italic;
-  if (fmt.fill !== undefined) out.fill = fmt.fill;
-  if (fmt.fontColor !== undefined) out.fontColor = fmt.fontColor;
-  return Object.keys(out).length === 0 ? null : out;
-}
-
-function fmtEqual(a: CellFormat | undefined, b: CellFormat | undefined): boolean {
-  return JSON.stringify(normalizeFmt(a)) === JSON.stringify(normalizeFmt(b));
 }
 
 /**
@@ -91,6 +85,78 @@ function diffCell(
   }
 
   return out;
+}
+
+function mapDiff(
+  kind: DiffKind,
+  sheet: string,
+  before: Record<string, unknown> | undefined,
+  after: Record<string, unknown> | undefined,
+  addressPrefix: string,
+  changes: DiffEntry[],
+): void {
+  const b = before ?? {};
+  const a = after ?? {};
+  const keys = new Set([...Object.keys(b), ...Object.keys(a)]);
+  for (const k of [...keys].sort()) {
+    if (JSON.stringify(b[k] ?? null) === JSON.stringify(a[k] ?? null)) continue;
+    changes.push({
+      kind,
+      sheet,
+      address: `${addressPrefix}${k}`,
+      before: b[k],
+      after: a[k],
+    });
+  }
+}
+
+function listDiff(
+  kind: DiffKind,
+  sheet: string,
+  before: Array<string | number> | undefined,
+  after: Array<string | number> | undefined,
+  changes: DiffEntry[],
+): void {
+  const b = [...(before ?? [])].map(String).sort();
+  const a = [...(after ?? [])].map(String).sort();
+  if (JSON.stringify(b) === JSON.stringify(a)) return;
+  changes.push({ kind, sheet, before: b, after: a });
+}
+
+function diffSheetLayout(sheet: string, base: Sheet | undefined, compare: Sheet | undefined, changes: DiffEntry[]): void {
+  if (!base && !compare) return;
+  mapDiff('col-width', sheet, base?.columnWidths, compare?.columnWidths, 'col:', changes);
+  mapDiff('row-height', sheet, base?.rowHeights, compare?.rowHeights, 'row:', changes);
+  listDiff('col-hidden', sheet, base?.hiddenColumns, compare?.hiddenColumns, changes);
+  listDiff('row-hidden', sheet, base?.hiddenRows, compare?.hiddenRows, changes);
+  listDiff('merge', sheet, base?.merges, compare?.merges, changes);
+
+  const bHidden = !!(base?.hidden || base?.veryHidden);
+  const cHidden = !!(compare?.hidden || compare?.veryHidden);
+  if (bHidden !== cHidden) {
+    changes.push({
+      kind: 'sheet-hidden',
+      sheet,
+      before: base?.veryHidden ? 'veryHidden' : base?.hidden ? 'hidden' : 'visible',
+      after: compare?.veryHidden ? 'veryHidden' : compare?.hidden ? 'hidden' : 'visible',
+    });
+  }
+  if ((base?.tabColor ?? null) !== (compare?.tabColor ?? null)) {
+    changes.push({
+      kind: 'sheet-tab-color',
+      sheet,
+      before: base?.tabColor,
+      after: compare?.tabColor,
+    });
+  }
+  if (JSON.stringify(base?.freeze ?? null) !== JSON.stringify(compare?.freeze ?? null)) {
+    changes.push({
+      kind: 'sheet-freeze',
+      sheet,
+      before: base?.freeze,
+      after: compare?.freeze,
+    });
+  }
 }
 
 export function diffSnapshots(
@@ -151,9 +217,8 @@ export function diffSnapshots(
     for (const addr of [...addrs].sort()) {
       changes.push(...diffCell(sheetName, addr, baseCells[addr], compareCells[addr]));
     }
+    diffSheetLayout(sheetName, base.sheets[sheetName], compare.sheets[sheetName], changes);
   }
 
   return { changes };
 }
-
-// silence unused in case of tree-shake

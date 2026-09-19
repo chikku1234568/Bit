@@ -134,4 +134,16 @@ describe('M5 mergeSnapshots', () => {
     );
     expect(cellsEqual(cell(1), cell(2))).toBe(false);
   });
+
+  it('column width / freeze on one side → auto-take', () => {
+    const base = book({ A1: cell(1) });
+    const ours = book({ A1: cell(1) });
+    const theirs = book({ A1: cell(1) });
+    theirs.sheets.Budget.columnWidths = { A: 22 };
+    theirs.sheets.Budget.freeze = { row: 1, col: 0 };
+    const r = mergeSnapshots(base, ours, theirs);
+    expect(r.conflicts).toHaveLength(0);
+    expect(r.snapshot.sheets.Budget.columnWidths?.A).toBe(22);
+    expect(r.snapshot.sheets.Budget.freeze).toEqual({ row: 1, col: 0 });
+  });
 });
