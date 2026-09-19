@@ -25,6 +25,7 @@ export interface Version {
   message: string;
   snapshotHash: string;
   scenarioName?: string;
+  promotedFromVersionId?: string;
 }
 
 export interface ProjectDetail extends Project {
@@ -307,6 +308,25 @@ export interface VersionGraph {
 
 export async function getProjectGraph(projectId: string): Promise<VersionGraph> {
   return json(await fetch(`${API_BASE}/projects/${projectId}/graph`));
+}
+
+
+export async function promoteVersion(opts: {
+  versionId: string;
+  message?: string;
+  expectedMainTip?: string;
+}): Promise<Version> {
+  return json(
+    await fetch(`${API_BASE}/versions/${opts.versionId}/promote`, {
+      method: 'POST',
+      headers: { ...authorHeader(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: opts.message,
+        expectedMainTip: opts.expectedMainTip,
+        author: getAuthor(),
+      }),
+    }),
+  );
 }
 
 export async function getVersionXlsxBase64(

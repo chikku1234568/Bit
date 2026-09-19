@@ -1,6 +1,7 @@
 /**
  * Canonical Bit workbook snapshot types.
- * Tracked: values, formulas, sheet structure, cell formatting, layout.
+ * Tracked: values, formulas, sheet structure, cell formatting, layout,
+ * hyperlinks, validation, named ranges, comments, tables / autofilter.
  */
 
 export interface BorderEdge {
@@ -41,6 +42,12 @@ export interface CellFormat {
   alignment?: CellAlignment;
 }
 
+export interface CellComment {
+  text: string;
+  /** ExcelJS does not round-trip authors reliably. */
+  author?: string;
+}
+
 export interface Cell {
   /** Cached / typed value. null when formula-only or empty. */
   v: string | number | boolean | null;
@@ -48,6 +55,10 @@ export interface Cell {
   f: string | null;
   /** Tracked formatting; omit when none. */
   fmt?: CellFormat;
+  /** Hyperlink target URL (external or internal), when present. */
+  hyperlink?: string;
+  /** Cell note / comment. */
+  comment?: CellComment;
 }
 
 export interface SheetDimensions {
@@ -60,6 +71,28 @@ export interface FreezePane {
   row: number;
   /** Number of frozen columns (xSplit). */
   col: number;
+}
+
+/** Data validation rule (ExcelJS expands multi-cell sqref to per-cell on read). */
+export interface ValidationRule {
+  sqref: string;
+  type: string;
+  operator?: string;
+  formulae?: string[];
+  allowBlank?: boolean;
+  showErrorMessage?: boolean;
+  showInputMessage?: boolean;
+  errorTitle?: string;
+  error?: string;
+  promptTitle?: string;
+  prompt?: string;
+}
+
+export interface SheetTable {
+  name: string;
+  ref: string;
+  headerRow?: boolean;
+  totalsRow?: boolean;
 }
 
 export interface Sheet {
@@ -77,10 +110,26 @@ export interface Sheet {
   veryHidden?: boolean;
   tabColor?: string;
   freeze?: FreezePane;
+  /** Data validation rules on this sheet. */
+  validations?: ValidationRule[];
+  /** Excel tables (ListObjects). */
+  tables?: SheetTable[];
+  /** Sheet autoFilter range, e.g. "A1:D10". */
+  autoFilter?: string | null;
+}
+
+/** Workbook- or sheet-scoped defined name. */
+export interface NamedRange {
+  name: string;
+  refersTo: string;
+  /** Sheet name when sheet-scoped; null/omit = workbook. */
+  scope?: string | null;
 }
 
 export interface WorkbookSnapshot {
   sheets: Record<string, Sheet>;
   /** Sheet names in workbook order */
   sheetOrder: string[];
+  /** Defined names (named ranges). */
+  names?: NamedRange[];
 }

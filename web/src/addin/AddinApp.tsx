@@ -12,6 +12,7 @@ import {
   listScenarios,
   listVersions,
   pickFolder,
+  promoteVersion,
   saveVersion,
   setAuthor,
   setDataDir,
@@ -41,6 +42,7 @@ export function AddinApp() {
   const [versions, setVersions] = useState<Version[]>([]);
   const [graph, setGraph] = useState<VersionGraph | null>(null);
   const [changes, setChanges] = useState<DiffEntry[]>([]);
+  const [changedCompareId, setChangedCompareId] = useState<string | null>(null);
   const [note, setNote] = useState('');
   const [newScenario, setNewScenario] = useState('');
   const [newProjectName, setNewProjectName] = useState('');
@@ -112,6 +114,11 @@ export function AddinApp() {
       setProject(null);
       setScenarios([]);
       setVersions([]);
+      setGraph(null);
+      if (list[0]) {
+        localStorage.setItem('bit-addin-project', list[0].id);
+        await refreshProject(list[0].id);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -128,6 +135,41 @@ export function AddinApp() {
       const list = await listProjects();
       setProjects(list);
       setProject(null);
+      setScenarios([]);
+      setVersions([]);
+      setGraph(null);
+      if (list[0]) {
+        localStorage.setItem('bit-addin-project', list[0].id);
+        await refreshProject(list[0].id);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Fetch: reload graph, scenarios, tips from the project folder (synced disk). */
+  async function onFetch() {
+    setBusy(true);
+    setError(null);
+    try {
+      await refreshAgent();
+      const list = await listProjects();
+      setProjects(list);
+      const id = project?.id ?? list[0]?.id;
+      if (id) {
+        localStorage.setItem('bit-addin-project', id);
+        await refreshProject(id);
+        if (tab === 'graph') {
+          setGraph(await getProjectGraph(id));
+        }
+      } else {
+        setProject(null);
+        setScenarios([]);
+        setVersions([]);
+        setGraph(null);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -221,6 +263,32 @@ export function AddinApp() {
     }
   }
 
+  async function onMakeMain(versionId: string) {
+    if (!project) return;
+    const ok = window.confirm(
+      'Make this Main? Your teammates will see this as the new Main tip after Fetch. No cell-by-cell combine.',
+    );
+    if (!ok) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await promoteVersion({
+        versionId,
+        message: 'Make this Main',
+        expectedMainTip: project.main.tipVersionId ?? undefined,
+      });
+      await refreshProject(project.id);
+      if (tab === 'graph') {
+        setGraph(await getProjectGraph(project.id));
+      }
+      setTab('history');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function loadGraph() {
     if (!project) return;
     setBusy(true);
@@ -235,12 +303,18 @@ export function AddinApp() {
     }
   }
 
-  async function loadChanged() {
-    if (!project || !selected?.tipVersionId) return;
+  /** What changed: default Main tip vs selected version (collab view). */
+  async function loadChanged(compareVersionId?: string) {
+    if (!project) return;
     const mainTip = project.main.tipVersionId;
-    const compare = selected.tipVersionId;
+    const compare =
+      compareVersionId ??
+      selected?.tipVersionId ??
+      versions[0]?.id ??
+      null;
+    if (!compare) return;
     const base =
-      !selected.isMain && mainTip && mainTip !== compare
+      mainTip && mainTip !== compare
         ? mainTip
         : versions.find((v) => v.id !== compare)?.id ?? compare;
     setBusy(true);
@@ -248,6 +322,7 @@ export function AddinApp() {
     try {
       const diff = await getDiff(base, compare);
       setChanges(diff.changes);
+      setChangedCompareId(compare);
       setTab('changed');
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -281,7 +356,7 @@ export function AddinApp() {
           <input value={author} onChange={(e) => setAuthorState(e.target.value)} />
         </label>
         <label>
-          Storage folder
+          Project folder
           <input value={folderDraft} onChange={(e) => setFolderDraft(e.target.value)} />
         </label>
         <div className="row">
@@ -289,10 +364,17 @@ export function AddinApp() {
             Choose folder
           </button>
           <button type="button" className="secondary" disabled={busy} onClick={() => void onSetFolder()}>
-            Use path
+            Open project
+          </button>
+          <button type="button" className="secondary" disabled={busy} onClick={() => void onFetch()}>
+            Fetch
           </button>
         </div>
         <p className="addin-muted path">{dataDir}</p>
+        <p className="addin-muted">
+          Same project folder for the team (disk or SharePoint-synced). Each person keeps their own
+          workbook — never co-author one .xlsx.
+        </p>
       </section>
 
       <section className="block">
@@ -389,14 +471,16 @@ export function AddinApp() {
               className={tab === 'changed' ? 'on' : ''}
               onClick={() => void loadChanged()}
             >
-              Changed
+              What changed
             </button>
           </nav>
 
           {tab === 'home' ? (
             <p className="addin-muted">
-              Edit in Excel, then <strong>Save version</strong>. Switch scenario to branch. Graph
-              shows the version tree.
+              Edit in <em>your</em> workbook, then <strong>Save version</strong>. Use{' '}
+              <strong>Fetch</strong> to see teammates&apos; versions from the shared folder.{' '}
+              <strong>Open</strong> a version into a new workbook. <strong>Make this Main</strong>{' '}
+              promotes a version without combining cells.
             </p>
           ) : null}
 
@@ -404,45 +488,92 @@ export function AddinApp() {
             <ul className="hist">
               {versions
                 .filter((v) => !selected || v.scenarioId === selected.id || v.id === selected.tipVersionId)
-                .map((v) => (
-                  <li key={v.id}>
-                    <div>
-                      <strong>{v.message}</strong>
-                      <div className="addin-muted">
-                        {v.scenarioName ?? ''} · {v.author} ·{' '}
-                        {new Date(v.timestamp).toLocaleString()}
+                .map((v) => {
+                  const isMainTip = project.main.tipVersionId === v.id;
+                  return (
+                    <li key={v.id}>
+                      <div>
+                        <strong>{v.message}</strong>
+                        <div className="addin-muted">
+                          {v.scenarioName ?? ''} · {v.author} ·{' '}
+                          {new Date(v.timestamp).toLocaleString()}
+                          {isMainTip ? ' · Main tip' : ''}
+                          {v.promotedFromVersionId ? ' · promoted' : ''}
+                        </div>
                       </div>
-                    </div>
-                    <button type="button" className="secondary" onClick={() => void onOpenVersion(v.id)}>
-                      Open
-                    </button>
-                  </li>
-                ))}
+                      <div className="row">
+                        <button
+                          type="button"
+                          className="secondary"
+                          disabled={busy}
+                          onClick={() => void onOpenVersion(v.id)}
+                        >
+                          Open
+                        </button>
+                        {!isMainTip ? (
+                          <button
+                            type="button"
+                            className="secondary"
+                            disabled={busy}
+                            onClick={() => void onMakeMain(v.id)}
+                          >
+                            Make this Main
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          className="secondary"
+                          disabled={busy}
+                          onClick={() => void loadChanged(v.id)}
+                        >
+                          What changed
+                        </button>
+                      </div>
+                    </li>
+                  );
+                })}
             </ul>
           ) : null}
 
-          {tab === 'graph' && graph ? <GraphView graph={graph} /> : null}
+          {tab === 'graph' && graph ? (
+            <GraphView
+              graph={graph}
+              onMakeMain={(id) => void onMakeMain(id)}
+              mainTipId={project.main.tipVersionId}
+            />
+          ) : null}
 
           {tab === 'changed' ? (
-            <ul className="hist">
-              {changes.length === 0 ? (
-                <li className="addin-muted">No tracked changes.</li>
-              ) : (
-                changes.slice(0, 80).map((c, i) => (
-                  <li key={i}>
-                    <strong>{c.kind}</strong>{' '}
-                    <span className="addin-muted">
-                      {c.sheet}
-                      {c.address ? `!${c.address}` : ''}
-                    </span>
-                  </li>
-                ))
-              )}
-            </ul>
+            <>
+              <p className="addin-muted">
+                Main tip vs{' '}
+                {changedCompareId
+                  ? versions.find((v) => v.id === changedCompareId)?.message ?? 'selected'
+                  : 'selected version'}
+              </p>
+              <ul className="hist">
+                {changes.length === 0 ? (
+                  <li className="addin-muted">No tracked changes.</li>
+                ) : (
+                  changes.slice(0, 80).map((c, i) => (
+                    <li key={i}>
+                      <strong>{c.kind}</strong>{' '}
+                      <span className="addin-muted">
+                        {c.sheet}
+                        {c.address ? `!${c.address}` : ''}
+                      </span>
+                    </li>
+                  ))
+                )}
+              </ul>
+            </>
           ) : null}
         </>
       ) : (
-        <p className="addin-muted">Create a project from this workbook to start.</p>
+        <p className="addin-muted">
+          Choose a project folder (or Open project with an existing project.json), then Create
+          project from this workbook — or select a project already in the folder.
+        </p>
       )}
     </div>
   );

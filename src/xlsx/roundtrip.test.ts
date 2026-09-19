@@ -278,3 +278,181 @@ describe('xlsx bridge round-trip', () => {
     expect(afterParse.sheets.Assumptions.hiddenColumns).toContain('C');
   });
 });
+
+describe('hyperlink URL tracking', () => {
+  it('round-trips cell hyperlink URL', async () => {
+    const snap: WorkbookSnapshot = {
+      sheetOrder: ['Links'],
+      sheets: {
+        Links: {
+          dimensions: { rows: 2, cols: 2 },
+          cells: {
+            A1: { v: 'Docs', f: null, hyperlink: 'https://example.com/docs' },
+            B1: { v: 1, f: null },
+          },
+        },
+      },
+    };
+    const buf = await writeXlsx(snap);
+    const parsed = await parseXlsx(buf);
+    expect(parsed.sheets.Links.cells.A1.v).toBe('Docs');
+    expect(parsed.sheets.Links.cells.A1.hyperlink).toBe('https://example.com/docs');
+  });
+});
+
+describe('data validation tracking', () => {
+  it('round-trips sheet validations', async () => {
+    const snap: WorkbookSnapshot = {
+      sheetOrder: ['V'],
+      sheets: {
+        V: {
+          dimensions: { rows: 2, cols: 2 },
+          cells: {
+            A1: { v: 5, f: null },
+            B1: { v: 'Yes', f: null },
+          },
+          validations: [
+            {
+              sqref: 'A1',
+              type: 'whole',
+              operator: 'between',
+              formulae: ['1', '10'],
+              allowBlank: true,
+              showErrorMessage: true,
+              errorTitle: 'Out of range',
+              error: 'Enter 1-10',
+            },
+            {
+              sqref: 'B1',
+              type: 'list',
+              formulae: ['"Yes,No"'],
+              allowBlank: true,
+            },
+          ],
+        },
+      },
+    };
+    const buf = await writeXlsx(snap);
+    const parsed = await parseXlsx(buf);
+    expect(parsed.sheets.V.validations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sqref: 'A1',
+          type: 'whole',
+          operator: 'between',
+          formulae: ['1', '10'],
+          allowBlank: true,
+        }),
+        expect.objectContaining({
+          sqref: 'B1',
+          type: 'list',
+          formulae: ['"Yes,No"'],
+        }),
+      ]),
+    );
+  });
+});
+
+describe('named range tracking', () => {
+  it('round-trips workbook named ranges', async () => {
+    const snap: WorkbookSnapshot = {
+      sheetOrder: ['Budget'],
+      sheets: {
+        Budget: {
+          dimensions: { rows: 2, cols: 2 },
+          cells: { A1: { v: 1, f: null }, B1: { v: 2, f: null } },
+        },
+      },
+      names: [
+        { name: 'TaxRate', refersTo: 'Budget!$A$1', scope: null },
+        { name: 'LocalAmt', refersTo: 'Budget!$B$1', scope: 'Budget' },
+      ],
+    };
+    const buf = await writeXlsx(snap);
+    const parsed = await parseXlsx(buf);
+    expect(parsed.names).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'TaxRate', refersTo: 'Budget!$A$1' }),
+        expect.objectContaining({
+          name: 'LocalAmt',
+          refersTo: 'Budget!$B$1',
+          scope: 'Budget',
+        }),
+      ]),
+    );
+  });
+});
+
+describe('cell comment tracking', () => {
+  it('round-trips cell comment text', async () => {
+    const snap: WorkbookSnapshot = {
+      sheetOrder: ['Notes'],
+      sheets: {
+        Notes: {
+          dimensions: { rows: 1, cols: 1 },
+          cells: {
+            A1: { v: 'x', f: null, comment: { text: 'Check with FP&A' } },
+          },
+        },
+      },
+    };
+    const buf = await writeXlsx(snap);
+    const parsed = await parseXlsx(buf);
+    expect(parsed.sheets.Notes.cells.A1.comment).toEqual({
+      text: 'Check with FP&A',
+    });
+  });
+});
+
+describe('tables and autofilter tracking', () => {
+  it('round-trips Excel table metadata', async () => {
+    const snap: WorkbookSnapshot = {
+      sheetOrder: ['T'],
+      sheets: {
+        T: {
+          dimensions: { rows: 3, cols: 2 },
+          cells: {
+            A1: { v: 'Name', f: null },
+            B1: { v: 'Amt', f: null },
+            A2: { v: 'x', f: null },
+            B2: { v: 10, f: null },
+          },
+          tables: [
+            { name: 'MyTable', ref: 'A1:B2', headerRow: true, totalsRow: false },
+          ],
+        },
+      },
+    };
+    const buf = await writeXlsx(snap);
+    const parsed = await parseXlsx(buf);
+    expect(parsed.sheets.T.tables).toEqual([
+      expect.objectContaining({
+        name: 'MyTable',
+        ref: 'A1:B2',
+        headerRow: true,
+        totalsRow: false,
+      }),
+    ]);
+  });
+
+  it('round-trips sheet autoFilter range', async () => {
+    const snap: WorkbookSnapshot = {
+      sheetOrder: ['F'],
+      sheets: {
+        F: {
+          dimensions: { rows: 3, cols: 2 },
+          cells: {
+            A1: { v: 'A', f: null },
+            B1: { v: 'B', f: null },
+            A2: { v: 1, f: null },
+            B2: { v: 2, f: null },
+          },
+          autoFilter: 'A1:B2',
+        },
+      },
+    };
+    const buf = await writeXlsx(snap);
+    const parsed = await parseXlsx(buf);
+    expect(parsed.sheets.F.autoFilter).toBe('A1:B2');
+  });
+});

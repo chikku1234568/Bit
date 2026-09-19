@@ -7,6 +7,7 @@ import {
   getProject,
   listReviews,
   listVersions,
+  promoteVersion,
   saveVersion,
   type ProjectDetail,
   type Review,
@@ -113,6 +114,29 @@ export function ProjectPage() {
       });
       setMessage('');
       setFile(null);
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+
+  async function onMakeMain(versionId: string) {
+    if (!id || !project) return;
+    const ok = window.confirm(
+      'Make this Main? Teammates see the new Main tip after they Fetch. No cell-by-cell combine.',
+    );
+    if (!ok) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await promoteVersion({
+        versionId,
+        message: 'Make this Main',
+        expectedMainTip: project.main.tipVersionId ?? undefined,
+      });
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -307,20 +331,37 @@ export function ProjectPage() {
           <p className="muted">No versions.</p>
         ) : (
           <ul className="list versions">
-            {filteredVersions.map((v) => (
+            {filteredVersions.map((v) => {
+              const isMainTip = project.main.tipVersionId === v.id;
+              return (
               <li key={v.id}>
                 <div>
                   <strong>{v.message}</strong>
                   <div className="muted">
                     {v.author} · {v.scenarioName ?? 'Main'} ·{' '}
                     {new Date(v.timestamp).toLocaleString()}
+                    {isMainTip ? ' · Main tip' : ''}
+                    {v.promotedFromVersionId ? ' · promoted' : ''}
                   </div>
                 </div>
-                <a className="button secondary" href={downloadVersionUrl(v.id)}>
-                  Download .xlsx
-                </a>
+                <div className="row">
+                  <a className="button secondary" href={downloadVersionUrl(v.id)}>
+                    Download .xlsx
+                  </a>
+                  {!isMainTip ? (
+                    <button
+                      type="button"
+                      className="button secondary"
+                      disabled={busy}
+                      onClick={() => void onMakeMain(v.id)}
+                    >
+                      Make this Main
+                    </button>
+                  ) : null}
+                </div>
               </li>
-            ))}
+            );
+            })}
           </ul>
         )}
       </section>
