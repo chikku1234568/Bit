@@ -123,6 +123,10 @@ fixtures/          # Sample budget workbook
 - Layout: column widths, row heights, hidden rows/cols, merged ranges
 - Theme and indexed colours resolved to `#RRGGBB` when Excel stores them that way
 - Cell hyperlink URL (What changed)
+- Data validation rules (What changed)
+- Named ranges / defined names (What changed)
+- Cell comments / notes (What changed)
+- Tables and sheet AutoFilter range (What changed)
 
 ## Out of scope (later milestones)
 

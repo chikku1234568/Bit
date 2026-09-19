@@ -3,10 +3,14 @@ export type {
   Cell,
   CellAlignment,
   CellBorders,
+  CellComment,
   CellFormat,
   FreezePane,
+  NamedRange,
   Sheet,
   SheetDimensions,
+  SheetTable,
+  ValidationRule,
   WorkbookSnapshot,
 } from './types.js';
 export { parseXlsx, parseXlsxFromPath } from './parse.js';

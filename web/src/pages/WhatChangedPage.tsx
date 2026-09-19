@@ -26,6 +26,12 @@ const KIND_LABELS: Record<string, string> = {
   'cell-value': 'Value',
   'cell-formula': 'Formula',
   'cell-format': 'Format',
+  'cell-hyperlink': 'Hyperlink',
+  'cell-comment': 'Comment',
+  validation: 'Validation',
+  'named-range': 'Named range',
+  table: 'Table',
+  'auto-filter': 'AutoFilter',
 };
 
 function fmt(v: unknown): string {

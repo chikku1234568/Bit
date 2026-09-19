@@ -79,8 +79,10 @@ UI: **You are** in the top bar → `localStorage` key `bit-author`.
 - Column widths, row heights, hidden rows/cols, merges
 - Freeze panes, sheet hidden, tab colour
 - Theme/indexed colours resolved to `#RRGGBB` when possible
+- Cell hyperlink URL, data validation, named ranges, cell comments
+- Tables and sheet AutoFilter range
 
-Not tracked: charts, pivots, images, validation, conditional formatting, named ranges, comments, VBA.
+Not tracked: charts, pivots, images, conditional formatting, VBA. Comment authors and multi-cell validation ranges have ExcelJS fidelity limits (see README / PR notes).
 
 ## Web toolchain pin
 

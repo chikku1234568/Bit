@@ -4,7 +4,15 @@
  */
 
 import { fmtEqual, normalizeFmt } from '../xlsx/format.js';
-import type { Cell, Sheet, WorkbookSnapshot } from '../xlsx/types.js';
+import type {
+  Cell,
+  CellComment,
+  NamedRange,
+  Sheet,
+  SheetTable,
+  ValidationRule,
+  WorkbookSnapshot,
+} from '../xlsx/types.js';
 
 export type DiffKind =
   | 'sheet-add'
@@ -23,7 +31,12 @@ export type DiffKind =
   | 'cell-value'
   | 'cell-formula'
   | 'cell-format'
-  | 'cell-hyperlink';
+  | 'cell-hyperlink'
+  | 'cell-comment'
+  | 'validation'
+  | 'named-range'
+  | 'table'
+  | 'auto-filter';
 
 export interface DiffEntry {
   kind: DiffKind;
@@ -35,6 +48,14 @@ export interface DiffEntry {
 
 export interface DiffResult {
   changes: DiffEntry[];
+}
+
+function commentKey(c: CellComment | undefined): string | null {
+  if (!c) return null;
+  return JSON.stringify({
+    text: c.text,
+    ...(c.author != null ? { author: c.author } : {}),
+  });
 }
 
 /**
@@ -91,6 +112,18 @@ function diffCell(
     out.push({ kind: 'cell-hyperlink', sheet, address, before: bh, after: ch });
   }
 
+  const bc = commentKey(b.comment);
+  const cc = commentKey(c.comment);
+  if (bc !== cc) {
+    out.push({
+      kind: 'cell-comment',
+      sheet,
+      address,
+      before: b.comment ?? null,
+      after: c.comment ?? null,
+    });
+  }
+
   return out;
 }
 
@@ -130,6 +163,92 @@ function listDiff(
   changes.push({ kind, sheet, before: b, after: a });
 }
 
+function validationMap(
+  rules: ValidationRule[] | undefined,
+): Record<string, ValidationRule> {
+  const out: Record<string, ValidationRule> = {};
+  for (const r of rules ?? []) {
+    out[r.sqref] = r;
+  }
+  return out;
+}
+
+function tableMap(tables: SheetTable[] | undefined): Record<string, SheetTable> {
+  const out: Record<string, SheetTable> = {};
+  for (const t of tables ?? []) {
+    out[t.name] = t;
+  }
+  return out;
+}
+
+function namedRangeKey(n: NamedRange): string {
+  return `${n.scope ?? ''}|${n.name}`;
+}
+
+function diffValidations(
+  sheet: string,
+  before: ValidationRule[] | undefined,
+  after: ValidationRule[] | undefined,
+  changes: DiffEntry[],
+): void {
+  const b = validationMap(before);
+  const a = validationMap(after);
+  const keys = new Set([...Object.keys(b), ...Object.keys(a)]);
+  for (const sqref of [...keys].sort()) {
+    if (JSON.stringify(b[sqref] ?? null) === JSON.stringify(a[sqref] ?? null)) continue;
+    changes.push({
+      kind: 'validation',
+      sheet,
+      address: sqref,
+      before: b[sqref] ?? null,
+      after: a[sqref] ?? null,
+    });
+  }
+}
+
+function diffTables(
+  sheet: string,
+  before: SheetTable[] | undefined,
+  after: SheetTable[] | undefined,
+  changes: DiffEntry[],
+): void {
+  const b = tableMap(before);
+  const a = tableMap(after);
+  const keys = new Set([...Object.keys(b), ...Object.keys(a)]);
+  for (const name of [...keys].sort()) {
+    if (JSON.stringify(b[name] ?? null) === JSON.stringify(a[name] ?? null)) continue;
+    changes.push({
+      kind: 'table',
+      sheet,
+      address: name,
+      before: b[name] ?? null,
+      after: a[name] ?? null,
+    });
+  }
+}
+
+function diffNamedRanges(
+  before: NamedRange[] | undefined,
+  after: NamedRange[] | undefined,
+  changes: DiffEntry[],
+): void {
+  const bMap: Record<string, NamedRange> = {};
+  const aMap: Record<string, NamedRange> = {};
+  for (const n of before ?? []) bMap[namedRangeKey(n)] = n;
+  for (const n of after ?? []) aMap[namedRangeKey(n)] = n;
+  const keys = new Set([...Object.keys(bMap), ...Object.keys(aMap)]);
+  for (const k of [...keys].sort()) {
+    if (JSON.stringify(bMap[k] ?? null) === JSON.stringify(aMap[k] ?? null)) continue;
+    const name = (aMap[k] ?? bMap[k])?.name;
+    changes.push({
+      kind: 'named-range',
+      address: name,
+      before: bMap[k] ?? null,
+      after: aMap[k] ?? null,
+    });
+  }
+}
+
 function diffSheetLayout(sheet: string, base: Sheet | undefined, compare: Sheet | undefined, changes: DiffEntry[]): void {
   if (!base && !compare) return;
   mapDiff('col-width', sheet, base?.columnWidths, compare?.columnWidths, 'col:', changes);
@@ -162,6 +281,20 @@ function diffSheetLayout(sheet: string, base: Sheet | undefined, compare: Sheet 
       sheet,
       before: base?.freeze,
       after: compare?.freeze,
+    });
+  }
+
+  diffValidations(sheet, base?.validations, compare?.validations, changes);
+  diffTables(sheet, base?.tables, compare?.tables, changes);
+
+  const bAf = base?.autoFilter ?? null;
+  const cAf = compare?.autoFilter ?? null;
+  if (bAf !== cAf) {
+    changes.push({
+      kind: 'auto-filter',
+      sheet,
+      before: bAf,
+      after: cAf,
     });
   }
 }
@@ -226,6 +359,8 @@ export function diffSnapshots(
     }
     diffSheetLayout(sheetName, base.sheets[sheetName], compare.sheets[sheetName], changes);
   }
+
+  diffNamedRanges(base.names, compare.names, changes);
 
   return { changes };
 }
