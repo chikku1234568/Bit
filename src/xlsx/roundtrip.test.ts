@@ -278,3 +278,24 @@ describe('xlsx bridge round-trip', () => {
     expect(afterParse.sheets.Assumptions.hiddenColumns).toContain('C');
   });
 });
+
+describe('hyperlink URL tracking', () => {
+  it('round-trips cell hyperlink URL', async () => {
+    const snap: WorkbookSnapshot = {
+      sheetOrder: ['Links'],
+      sheets: {
+        Links: {
+          dimensions: { rows: 2, cols: 2 },
+          cells: {
+            A1: { v: 'Docs', f: null, hyperlink: 'https://example.com/docs' },
+            B1: { v: 1, f: null },
+          },
+        },
+      },
+    };
+    const buf = await writeXlsx(snap);
+    const parsed = await parseXlsx(buf);
+    expect(parsed.sheets.Links.cells.A1.v).toBe('Docs');
+    expect(parsed.sheets.Links.cells.A1.hyperlink).toBe('https://example.com/docs');
+  });
+});

@@ -122,6 +122,7 @@ fixtures/          # Sample budget workbook
 - Formatting: bold, italic, underline, strike, font name/size, fill, font colour, number format, borders, alignment/wrap
 - Layout: column widths, row heights, hidden rows/cols, merged ranges
 - Theme and indexed colours resolved to `#RRGGBB` when Excel stores them that way
+- Cell hyperlink URL (What changed)
 
 ## Out of scope (later milestones)
 

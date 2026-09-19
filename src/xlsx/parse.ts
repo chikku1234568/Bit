@@ -202,11 +202,20 @@ function parseWorksheet(ws: ExcelJS.Worksheet): Sheet {
       }
 
       const fmt = extractFormat(excelCell);
+      let hyperlink: string | undefined;
+      if (raw && typeof raw === 'object' && 'hyperlink' in raw) {
+        const href = (raw as ExcelJS.CellHyperlinkValue).hyperlink;
+        if (typeof href === 'string' && href.trim()) hyperlink = href.trim();
+      } else if (excelCell.hyperlink) {
+        const href = String(excelCell.hyperlink);
+        if (href.trim()) hyperlink = href.trim();
+      }
       if (isMergeSlave(address, merges)) return;
-      if (v === null && formula === null && !fmt) return;
+      if (v === null && formula === null && !fmt && !hyperlink) return;
 
       const cell: Cell = { v, f: formula };
       if (fmt) cell.fmt = fmt;
+      if (hyperlink) cell.hyperlink = hyperlink;
       cells[address] = cell;
     });
   });

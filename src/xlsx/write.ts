@@ -96,6 +96,11 @@ function setCell(excelCell: ExcelJS.Cell, cell: Cell): void {
     } else {
       excelCell.value = { formula };
     }
+  } else if (cell.hyperlink) {
+    excelCell.value = {
+      text: cell.v != null ? String(cell.v) : cell.hyperlink,
+      hyperlink: cell.hyperlink,
+    };
   } else if (cell.v !== null && cell.v !== undefined) {
     excelCell.value = cell.v;
   }

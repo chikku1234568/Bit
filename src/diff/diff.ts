@@ -22,7 +22,8 @@ export type DiffKind =
   | 'cell-remove'
   | 'cell-value'
   | 'cell-formula'
-  | 'cell-format';
+  | 'cell-format'
+  | 'cell-hyperlink';
 
 export interface DiffEntry {
   kind: DiffKind;
@@ -82,6 +83,12 @@ function diffCell(
       before: normalizeFmt(b.fmt),
       after: normalizeFmt(c.fmt),
     });
+  }
+
+  const bh = b.hyperlink ?? null;
+  const ch = c.hyperlink ?? null;
+  if (bh !== ch) {
+    out.push({ kind: 'cell-hyperlink', sheet, address, before: bh, after: ch });
   }
 
   return out;

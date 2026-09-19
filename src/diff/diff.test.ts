@@ -106,4 +106,14 @@ describe('M4 diffSnapshots', () => {
     );
     expect(r.changes.some((c) => c.kind === 'sheet-freeze')).toBe(true);
   });
+  it('hyperlink URL change', () => {
+    const base = snap({ A1: { v: 'Docs', f: null, hyperlink: 'https://a.example' } });
+    const compare = snap({ A1: { v: 'Docs', f: null, hyperlink: 'https://b.example' } });
+    const r = diffSnapshots(base, compare);
+    expect(r.changes.some((c) => c.kind === 'cell-hyperlink')).toBe(true);
+    expect(r.changes.find((c) => c.kind === 'cell-hyperlink')).toMatchObject({
+      before: 'https://a.example',
+      after: 'https://b.example',
+    });
+  });
 });

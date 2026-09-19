@@ -48,6 +48,8 @@ export interface Cell {
   f: string | null;
   /** Tracked formatting; omit when none. */
   fmt?: CellFormat;
+  /** Hyperlink target URL (external or internal), when present. */
+  hyperlink?: string;
 }
 
 export interface SheetDimensions {
