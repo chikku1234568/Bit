@@ -9,7 +9,15 @@ const COLORS = [
   '#be123c',
 ];
 
-export function GraphView({ graph }: { graph: VersionGraph }) {
+export function GraphView({
+  graph,
+  onMakeMain,
+  mainTipId,
+}: {
+  graph: VersionGraph;
+  onMakeMain?: (versionId: string) => void;
+  mainTipId?: string | null;
+}) {
   const scenarioIndex = new Map(graph.scenarios.map((s, i) => [s.id, i]));
   const sorted = [...graph.nodes].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
   const colOf = (scenarioId: string) => scenarioIndex.get(scenarioId) ?? 0;
@@ -66,23 +74,32 @@ export function GraphView({ graph }: { graph: VersionGraph }) {
         })}
       </svg>
       <ol className="graph-legend">
-        {sorted.map((n) => (
-          <li key={n.id}>
-            <span
-              className="dot"
-              style={{ background: COLORS[colOf(n.scenarioId) % COLORS.length] }}
-            />
-            <span>
-              <strong>{n.message}</strong>
-              <span className="muted">
-                {' '}
-                · {n.scenarioName}
-                {n.isTip ? ' · tip' : ''}
-                {n.parentIds.length > 1 ? ' · combined' : ''} · {n.author}
+        {sorted.map((n) => {
+          const isMainTip = mainTipId === n.id;
+          return (
+            <li key={n.id}>
+              <span
+                className="dot"
+                style={{ background: COLORS[colOf(n.scenarioId) % COLORS.length] }}
+              />
+              <span>
+                <strong>{n.message}</strong>
+                <span className="muted">
+                  {' '}
+                  · {n.scenarioName}
+                  {n.isTip ? ' · tip' : ''}
+                  {isMainTip ? ' · Main' : ''}
+                  {n.parentIds.length > 1 ? ' · combined' : ''} · {n.author}
+                </span>
               </span>
-            </span>
-          </li>
-        ))}
+              {onMakeMain && !isMainTip ? (
+                <button type="button" className="secondary" onClick={() => onMakeMain(n.id)}>
+                  Make this Main
+                </button>
+              ) : null}
+            </li>
+          );
+        })}
       </ol>
     </div>
   );
