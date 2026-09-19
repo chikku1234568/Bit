@@ -1,8 +1,8 @@
 # Bit — V0 (M1–M7 offline)
 
-Version control for Excel. **M6** adds Ask for review, Needs a decision, and Combine into Main.
+Version control for Excel. Collaboration unit = **Bit project** (two workbooks, same project folder) — not one shared `.xlsx`.
 
-Excel add-in (local folder): **[docs/EXCEL-ADDIN.md](docs/EXCEL-ADDIN.md)** — `scripts\start-bit.cmd` then sideload `addin\manifest.xml`.
+Excel add-in + SharePoint-synced folder: **[docs/EXCEL-ADDIN.md](docs/EXCEL-ADDIN.md)** — `scripts\start-bit.cmd` then sideload `addin\manifest.xml`.
 
 Practical onboarding: **[BIT-GUIDE.md](BIT-GUIDE.md)**.
 
@@ -59,7 +59,7 @@ No login. Author is taken from:
 2. multipart form field `author`, or
 3. default `demo-user`
 
-The UI stores the name in `localStorage` (`bit-author`). Invite / two-user is M7 — out of scope here.
+The UI stores the name in `localStorage` (`bit-author`). Two-person collab: same project folder (disk or SharePoint-synced); each person uses their own workbook. See docs/EXCEL-ADDIN.md.
 
 ## Test
 
@@ -80,7 +80,7 @@ npm run roundtrip -- path/to/file.xlsx
 ```
 src/xlsx/          # M1 bridge — parse/write snapshot (do not reimplement)
 src/domain/        # Project, Version, Scenario (Main)
-src/store/         # Local demo store: data/meta.json + blobs/ + xlsx/
+src/store/         # Append-only store: project.json + versions/ + blobs/ + xlsx/
 src/service/       # ProjectService
 src/diff/          # Pure snapshot diff (M4)
 src/merge/         # Pure three-way merge (M5)
@@ -105,6 +105,7 @@ fixtures/          # Sample budget workbook
 | POST | `/scenarios/:id/versions` | Save version on a scenario |
 | GET | `/versions/:id` | Version metadata |
 | GET | `/versions/:id/xlsx` | Download export |
+| POST | `/versions/:id/promote` | Make this Main (CAS Main tip) |
 | GET | `/diff?base=&compare=` | Cell/sheet diff between versions |
 | GET | `/merge?base=&ours=&theirs=` | Merge preview (conflicts, no write) |
 | POST | `/scenarios/:id/reviews` | Ask for review (freeze base/compare) |
