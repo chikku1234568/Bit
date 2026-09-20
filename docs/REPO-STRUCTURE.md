@@ -1,6 +1,6 @@
 # Bit — repo structure
 
-Where things live after **PR #2** (M3–M6 + M7 demo script) on `main`. Git root is this directory (`package.json` + `BIT-V0-DESIGN.md`). Nested clone on the laptop: `C:\Users\Srikar\Bit\Bit`.
+Where things live on `main`. Git root is the directory that contains `package.json` and `BIT-V0-DESIGN.md`.
 
 ---
 

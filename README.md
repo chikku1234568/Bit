@@ -1,6 +1,8 @@
 # Bit
 
-Version control for Excel. **V1 preview** — desktop Excel + a local agent + a **project folder** (disk or OneDrive/SharePoint sync).
+Version control for Excel. **V1 preview** (not AppSource) — desktop Excel + a local agent + a **project folder** (disk or OneDrive/SharePoint sync).
+
+**Limits:** [docs/LIMITATIONS.md](docs/LIMITATIONS.md) — no store listing, no Excel Online, no real login, charts dropped on Open. **License:** [MIT](LICENSE).
 
 Collaboration is **the same Bit project, two workbooks**. It is not two people editing one shared `.xlsx`. OneDrive shares the **project folder**. Each person still installs Bit on **their** PC.
 

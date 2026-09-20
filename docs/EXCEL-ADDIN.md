@@ -1,5 +1,7 @@
 # Bit Excel add-in (local / SharePoint-synced folder)
 
+Limits: [LIMITATIONS.md](LIMITATIONS.md).
+
 Windows Excel + a Bit **agent** on this PC. Storage is a **project folder** you pick (`project.json` + `versions/` + `blobs/`). That folder can be a normal disk path or a **SharePoint / OneDrive synced library** folder.
 
 ## Collaboration model (locked)

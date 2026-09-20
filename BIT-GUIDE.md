@@ -36,7 +36,7 @@ Reset store: delete `./data/` (gitignored). Meta + blobs + cached `.xlsx` live t
 ```
 src/xlsx/           # parseXlsx / writeXlsx / format helpers — do not reimplement
 src/domain/         # Project, Scenario, Version types
-src/store/          # Local demo store: data/meta.json + blobs/ + xlsx/
+src/store/          # Append-only store: project.json + versions/ + blobs/ + xlsx/
 src/service/        # ProjectService
 src/api/            # Fastify HTTP API
 src/diff/           # Pure snapshot diff (M4+)
