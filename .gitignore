@@ -43,3 +43,6 @@ Desktop.ini
 # Test / tool output
 .vitest/
 .turbo/
+
+# Internal product spec — not part of the public V1 surface
+BIT-V0-DESIGN.md

@@ -1,6 +1,6 @@
 # Bit — repo structure
 
-Where things live on `main`. Git root is the directory that contains `package.json` and `BIT-V0-DESIGN.md`.
+Where things live on `main`. Git root is the directory that contains `package.json`.
 
 ---
 
@@ -8,9 +8,8 @@ Where things live on `main`. Git root is the directory that contains `package.js
 
 ```
 Bit/
-├── BIT-V0-DESIGN.md          Product spec (locked decisions, merge table)
-├── BIT-GUIDE.md              Short runbook + milestone map
-├── README.md                 Install, run, API table
+├── BIT-GUIDE.md              Add-in runbook (web lab first, then Excel)
+├── README.md                 Install, start, sideload, collab
 ├── docs/
 │   ├── REPO-STRUCTURE.md     This file
 │   ├── FUNCTIONALITY.md      What works, how to use, comments
@@ -149,12 +148,12 @@ Vite 6, React 19, `react-router-dom`. Dev server `:5173`, `server.host: true`, p
 
 | File | Use |
 |---|---|
-| `BIT-V0-DESIGN.md` | Why / merge rules / non-goals. Do not treat as “how to run”. |
-| `BIT-GUIDE.md` | Commands, copy table, toolchain pin. |
-| `docs/E2E-DEMO.md` | Manual two-person walkthrough. |
-| `docs/REPO-STRUCTURE.md` | This map. |
-| `docs/FUNCTIONALITY.md` | Product + how-to + suggestions. |
-| `GROK-BOT-PROMPT.md` | Offline agent brief (untracked unless you add it). |
+| `README.md` | Clone, start, web lab, sideload, collab |
+| `BIT-GUIDE.md` | Short add-in runbook |
+| `docs/LIMITATIONS.md` | V1 limits |
+| `docs/EXCEL-ADDIN.md` | Pane buttons and sideload |
+| `docs/E2E-DEMO.md` | Manual two-person walkthrough |
+| `docs/FUNCTIONALITY.md` | What is saved / how to use |
 
 ---
 

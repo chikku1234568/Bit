@@ -40,6 +40,8 @@ npm run dev:web
 
 Keep both running. The pane talks to the agent through Vite’s `/api` proxy.
 
+**Before sideloading:** open http://127.0.0.1:5173 in a browser — same project as the add-in. Use it to try Fetch, Graph, What changed, and Make this Main. The add-in is required only to snapshot the **open** workbook.
+
 ## Sideload in Excel (Microsoft 365 / Excel 2021+)
 
 1. Start Bit as above.
@@ -47,7 +49,7 @@ Keep both running. The pane talks to the agent through Vite’s `/api` proxy.
 3. Choose `addin\manifest.xml` (this repo).
 4. Home ribbon → **Bit** group → **Bit** opens the task pane.
 
-If **Upload My Add-in** is missing and **MY ADD-INS** is empty: that is the Office Store, not Bit. Use **File → Options → Trust Center → Trusted Add-in Catalogs**, add a **network share** that contains `manifest.xml` (see `scripts\share-addin-catalog.cmd`), tick **Show in Menu**, restart Excel, then **SHARED FOLDER → Refresh → Bit**. Details: [README.md §3](../README.md#3-sideload-the-excel-add-in-once-per-machine).
+If **Upload My Add-in** is missing and **MY ADD-INS** is empty: that is the Office Store, not Bit. Use **File → Options → Trust Center → Trusted Add-in Catalogs**, add a **network share** that contains `manifest.xml` (see `scripts\share-addin-catalog.cmd`), tick **Show in Menu**, restart Excel, then **SHARED FOLDER → Refresh → Bit**. Details: [README.md §4](../README.md#4-sideload-the-excel-add-in-once-per-machine). Try http://127.0.0.1:5173 in a browser first if you only want to learn Fetch / Graph without Excel.
 
 First load of `office.js` uses Microsoft’s CDN. After that Excel caches it. Fully air-gapped Excel without that cache will not host the pane.
 

@@ -6,11 +6,15 @@ Version control for Excel. **V1 preview** (not AppSource) — desktop Excel + a 
 
 Collaboration is **the same Bit project, two workbooks**. It is not two people editing one shared `.xlsx`. OneDrive shares the **project folder**. Each person still installs Bit on **their** PC.
 
+The **Excel add-in** is the product. The **web lab** is for trying the same project (Fetch, Graph, What changed, Make this Main) in a browser **before** you sideload the add-in.
+
 | You want | Do this |
 |---|---|
-| Run Bit on this PC | [Install](#1-install-once) → [Start](#2-start-bit-every-session) → [Sideload](#3-sideload-the-excel-add-in-once-per-machine) |
-| Join a teammate’s project | Same install, then [Collaborate](#4-collaborate-onedrivesharepoint) |
-| How Fetch / Open works | [How collaboration works](#5-how-collaboration-works) |
+| Run Bit on this PC | [Install](#1-install-once) → [Start](#2-start-bit-every-session) |
+| Try without Excel first | [Web lab](#3-try-the-web-lab-before-the-add-in) — http://127.0.0.1:5173 |
+| Use it in Excel | [Sideload](#4-sideload-the-excel-add-in-once-per-machine) |
+| Join a teammate’s project | Same install, then [Collaborate](#5-collaborate-onedrivesharepoint) |
+| How Fetch / Open works | [How collaboration works](#6-how-collaboration-works) |
 
 Add-in details and sideload troubleshooting: **[docs/EXCEL-ADDIN.md](docs/EXCEL-ADDIN.md)**.
 
@@ -76,8 +80,8 @@ You should see:
 | Process | URL |
 |--------|-----|
 | Agent | http://127.0.0.1:3001 |
+| **Web lab (try first)** | http://127.0.0.1:5173 |
 | Add-in (Excel loads this) | http://127.0.0.1:5173/addin.html |
-| Browser lab (optional) | http://127.0.0.1:5173 |
 
 Check the agent: open http://127.0.0.1:3001/agent/status — you want `"ok": true`.
 
@@ -85,13 +89,27 @@ The Excel pane talks to the **agent on this PC**. A colleague cannot use your `l
 
 ---
 
-## 3. Sideload the Excel add-in (once per machine)
+## 3. Try the web lab before the add-in
+
+You do **not** need Excel sideloaded to learn Bit.
+
+1. Start Bit ([§2](#2-start-bit-every-session)).
+2. Open **http://127.0.0.1:5173** in a browser (this is the web lab, not the Office Store).
+3. Set **You are**, **Choose folder** / create a project by **uploading** an `.xlsx`, then use Fetch, history, Graph, What changed, Make this Main.
+
+Same agent and same project folder as the add-in. Difference: the browser **uploads a file**; the add-in snapshots the **open workbook** (`getFileAsync`). Use the lab to get comfortable; use Excel when you want Save version without exporting.
+
+If sideload fails later, the lab still works.
+
+---
+
+## 4. Sideload the Excel add-in (once per machine)
 
 Bit is **not** on the Office Store. **MY ADD-INS** will look empty. That is normal.
 
 ### If you have **Upload My Add-in**
 
-1. Start Bit ([§2](#2-start-bit-every-session)).
+1. Start Bit ([§2](#2-start-bit-every-session)). Optional: try the [web lab](#3-try-the-web-lab-before-the-add-in) first.
 2. Excel → **Insert** (or **Home**) → **Add-ins** → **My Add-ins**.
 3. **Upload My Add-in** → choose `addin\manifest.xml` in this repo.
 4. Home ribbon → **Bit** → task pane. Green **agent** pill = good.
@@ -115,7 +133,7 @@ If the pane says **offline**, start the agent again and reopen **Bit** on the ri
 
 ---
 
-## 4. Collaborate (OneDrive/SharePoint)
+## 5. Collaborate (OneDrive/SharePoint)
 
 OneDrive does **not** install Bit. It only syncs the **project folder**. Each person: install Bit → start Bit → sideload → **Choose folder** → **Fetch**.
 
@@ -135,7 +153,7 @@ You should see `project.json`, `versions\`, and `blobs\` appear in that folder, 
 ### Person B (joins)
 
 1. OneDrive → **Shared** → **Sync** / **Add shortcut to My files** so the library is a normal folder. Their path will **not** match Person A’s (different `C:\Users\...`).
-2. Clone/install Bit, start Bit, sideload ([§1–3](#1-install-once)).
+2. Clone/install Bit, start Bit, sideload ([§1–2](#1-install-once) and [§4](#4-sideload-the-excel-add-in-once-per-machine)). They can [try the web lab](#3-try-the-web-lab-before-the-add-in) first.
 3. Excel pane → **Choose folder** → *their* synced `BitProjects` path.
 4. **Fetch**.
 
@@ -157,7 +175,7 @@ If both Save on the same Main tip at once: one gets **409** — “Project was u
 
 ---
 
-## 5. How collaboration works
+## 6. How collaboration works
 
 ```
 OneDrive / SharePoint folder     ←  the Bit project (graph + snapshots)
@@ -173,7 +191,7 @@ OneDrive / SharePoint folder     ←  the Bit project (graph + snapshots)
 3. Edit only that workbook → **Save version** = “add my snapshot to the project.”
 4. **Make this Main** when the team wants that snapshot as official.
 
-Browser lab (no Excel pane): http://127.0.0.1:5173 after `npm run api` and `npm run dev:web`. Same agent, same folder. Useful if sideload fails.
+The [web lab](#3-try-the-web-lab-before-the-add-in) uses the same folder; only **Open** / Save-from-the-grid need Excel.
 
 ---
 
@@ -192,8 +210,8 @@ npm test
 | [docs/EXCEL-ADDIN.md](docs/EXCEL-ADDIN.md) | Add-in buttons, sideload, SharePoint notes |
 | [docs/FUNCTIONALITY.md](docs/FUNCTIONALITY.md) | What is saved vs not, how to use |
 | [docs/REPO-STRUCTURE.md](docs/REPO-STRUCTURE.md) | Where code lives |
-| [BIT-GUIDE.md](BIT-GUIDE.md) | Runbook |
-| [BIT-V0-DESIGN.md](BIT-V0-DESIGN.md) | Product decisions |
+| [BIT-GUIDE.md](BIT-GUIDE.md) | Short add-in runbook |
+| [docs/LIMITATIONS.md](docs/LIMITATIONS.md) | What V1 does not do |
 
 ### Fidelity (short)
 

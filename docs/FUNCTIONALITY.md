@@ -1,6 +1,6 @@
 # Bit — functionality, how to use, comments
 
-What the product does **today** on `main` (M1–M6, plus an M7 demo script). For file locations see [`REPO-STRUCTURE.md`](./REPO-STRUCTURE.md). Product rules: `BIT-V0-DESIGN.md`.
+What the product does **today**. The **Excel add-in** is the product; the web UI at http://127.0.0.1:5173 is a lab to try the same project **before** sideloading. File map: [`REPO-STRUCTURE.md`](./REPO-STRUCTURE.md). Limits: [`LIMITATIONS.md`](./LIMITATIONS.md).
 
 UI: http://127.0.0.1:5173  
 API: http://127.0.0.1:3001

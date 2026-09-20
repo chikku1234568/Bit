@@ -1,95 +1,71 @@
-# Bit — practical guide
+# Bit — add-in runbook
 
-Onboarding for the local demo. Design rules live in `BIT-V0-DESIGN.md`; this file is how to run and where things live.
+The product is the **Excel add-in** (task pane + local agent). Full commands: [README.md](README.md). Limits: [docs/LIMITATIONS.md](docs/LIMITATIONS.md).
 
-## How to run
+Use the **web lab** at http://127.0.0.1:5173 to try Save version, Fetch, Graph, What changed, and Make this Main **before** you sideload anything in Excel. Same agent, same project folder. The pane is how you snapshot the **open** workbook; the browser cannot read Excel.
 
-```bash
+## Start
+
+```bat
 npm install
-cd web && npm install && cd ..
+cd web
+npm install
+cd ..
+scripts\start-bit.cmd
 ```
 
-| Process | Command | URL |
-|--------|---------|-----|
-| API | `npm run api` | `http://127.0.0.1:3001` |
-| Web | `npm run dev:web` | `http://127.0.0.1:5173` (Vite binds `0.0.0.0`; proxies `/api` → API) |
-| Tests | `npm test` | — |
+Or: `npm run api` and `npm run dev:web`.
 
-Optional env: `PORT`, `HOST`, `BIT_DATA_DIR` (default `./data`), `VITE_API_BASE` (default `/api`).
+| | URL |
+|--|-----|
+| Agent | http://127.0.0.1:3001 |
+| **Web lab (try first)** | http://127.0.0.1:5173 |
+| Add-in (Excel loads this) | http://127.0.0.1:5173/addin.html |
 
-Reset store: delete `./data/` (gitignored). Meta + blobs + cached `.xlsx` live there.
+Then sideload `addin\manifest.xml` — [README §4](README.md#4-sideload-the-excel-add-in-once-per-machine).
 
-## Milestone map
+## Product (add-in)
 
-| Milestone | Outcome | Status target |
-|-----------|---------|---------------|
-| **M1** | Parse/write `.xlsx`; snapshot schema; round-trip | Done |
-| **M2** | Project, Main, Save version, history, download | Done |
-| **M3** | Create scenario, switch, save on scenario | Done |
-| **M4** | What changed (diff) | Done |
-| **M5** | Three-way merge engine + preview API | Done |
-| **M6** | Ask for review, Needs a decision, Combine into Main | Done |
-| **M7** | Two-user E2E demo script (Alex/Jordan) | Done |
+Same **project folder**, two **workbooks**. Not one shared `.xlsx`.
 
-## Key paths
+| Button | Meaning |
+|--------|---------|
+| Choose folder | Point the agent at disk or a OneDrive/SharePoint **sync** path |
+| Fetch | Reload the graph from that folder |
+| Create project / Save version | Snapshot the **open** Excel file into the project |
+| Open | New workbook from a version |
+| What changed | Diff Main vs a version |
+| Make this Main | Point Main at that snapshot |
+
+**You are** is a display name (`localStorage` `bit-author`), not login.
+
+## UI copy (never Git words)
+
+| Concept | Bit |
+|---------|-----|
+| Repo | Project |
+| Commit | Save version |
+| `main` | Main |
+| Branch | Scenario |
+| Diff | What changed |
+| Checkout | Open this version |
+
+## Store
+
+`project.json` + `versions/` + `blobs/` in the chosen folder (often OneDrive). Default if you never pick a folder: `./data` (gitignored). Last path: `%USERPROFILE%\.bit\config.json`.
+
+## Fidelity
+
+**Kept:** values, formulas, formatting/layout subset, hyperlinks, validation, names, comments, tables.
+
+**Dropped on Open:** charts, pivots, images, macros / `.xlsm`.
+
+## Layout
 
 ```
-src/xlsx/           # parseXlsx / writeXlsx / format helpers — do not reimplement
-src/domain/         # Project, Scenario, Version types
-src/store/          # Append-only store: project.json + versions/ + blobs/ + xlsx/
-src/service/        # ProjectService
-src/api/            # Fastify HTTP API
-src/diff/           # Pure snapshot diff (M4+)
-src/merge/          # Pure three-way merge (M5+)
-web/src/pages/      # Home, Project, What changed, Review
-fixtures/           # Sample budget workbook
-docs/E2E-DEMO.md     # Alex/Jordan click path (M7)
+addin/manifest.xml
+src/xlsx/      parse/write snapshot
+src/store/     append-only project store
+src/api/       agent :3001
+web/           lab + add-in pane :5173
 ```
-
-## Auth stub (through M6)
-
-No real login. Author comes from, in order:
-
-1. `X-Bit-Author` request header  
-2. Multipart form field `author`  
-3. Default `demo-user`
-
-UI: **You are** in the top bar → `localStorage` key `bit-author`.
-
-## UI copy (never show Git words)
-
-| Concept | Bit UI |
-|---------|--------|
-| Project | **Project** |
-| Commit | **Save version** |
-| Branch main | **Main** |
-| Feature branch | **Scenario** |
-| Diff | **What changed** |
-| Pull request | **Ask for review** |
-| Merge | **Combine into Main** |
-| Conflict | **Needs a decision** |
-| Clone/pull/push | **Sync** |
-| Checkout | **Open this version** / **Switch scenario** |
-
-## Snapshot fidelity (tracked)
-
-- Values, formulas, sheet names/order
-- Font: bold, italic, underline, strike, name, size, colour
-- Fill, number format, borders, alignment/wrap
-- Column widths, row heights, hidden rows/cols, merges
-- Freeze panes, sheet hidden, tab colour
-- Theme/indexed colours resolved to `#RRGGBB` when possible
-- Cell hyperlink URL, data validation, named ranges, cell comments
-- Tables and sheet AutoFilter range
-
-Not tracked: charts, pivots, images, conditional formatting, VBA. Comment authors and multi-cell validation ranges have ExcelJS fidelity limits (see README / PR notes).
-
-## Web toolchain pin
-
-Vite **6** + `@vitejs/plugin-react` **4** + TypeScript **5.8**. Do not upgrade to Vite 8 / TS 6 for V0.
-
-## Constraints (V0)
-
-- No Postgres, S3, Clerk, Auth.js, Redis, or cloud SDKs.
-- Merge/diff engines are pure: snapshots in → result out (no Fastify / ExcelJS / fs).
-- Reuse existing deps only (exceljs, fastify, cors, multipart, vitest, tsx, typescript, React 19, react-router-dom, Vite 6).
