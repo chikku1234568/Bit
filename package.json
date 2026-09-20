@@ -2,7 +2,7 @@
   "name": "bit",
   "version": "0.6.0",
   "private": true,
-  "description": "Bit — version control for Excel. M6: Ask for review, Needs a decision, Combine into Main.",
+  "description": "Bit — version control for Excel. V1: local agent + Excel add-in + shared project folder.",
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit",

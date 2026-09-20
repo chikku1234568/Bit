@@ -1,141 +1,213 @@
-# Bit — V0 (M1–M7 offline)
+# Bit
 
-Version control for Excel. Collaboration unit = **Bit project** (two workbooks, same project folder) — not one shared `.xlsx`.
+Version control for Excel. **V1 preview** — desktop Excel + a local agent + a **project folder** (disk or OneDrive/SharePoint sync).
 
-Excel add-in + SharePoint-synced folder: **[docs/EXCEL-ADDIN.md](docs/EXCEL-ADDIN.md)** — `scripts\start-bit.cmd` then sideload `addin\manifest.xml`.
+Collaboration is **the same Bit project, two workbooks**. It is not two people editing one shared `.xlsx`. OneDrive shares the **project folder**. Each person still installs Bit on **their** PC.
 
-Practical onboarding: **[BIT-GUIDE.md](BIT-GUIDE.md)**.
+| You want | Do this |
+|---|---|
+| Run Bit on this PC | [Install](#1-install-once) → [Start](#2-start-bit-every-session) → [Sideload](#3-sideload-the-excel-add-in-once-per-machine) |
+| Join a teammate’s project | Same install, then [Collaborate](#4-collaborate-onedrivesharepoint) |
+| How Fetch / Open works | [How collaboration works](#5-how-collaboration-works) |
 
-- Repo map: **[docs/REPO-STRUCTURE.md](docs/REPO-STRUCTURE.md)**
-- What works and how to use it: **[docs/FUNCTIONALITY.md](docs/FUNCTIONALITY.md)**
-- Alex / Jordan click path: **[docs/E2E-DEMO.md](docs/E2E-DEMO.md)**
+Add-in details and sideload troubleshooting: **[docs/EXCEL-ADDIN.md](docs/EXCEL-ADDIN.md)**.
 
-## Install
+---
 
-```bash
+## What you need
+
+- **Windows** desktop Excel (Microsoft 365). Not Excel in the browser.
+- **Node.js 18+** (20.x is what we run). [nodejs.org](https://nodejs.org/)
+- Git, if you clone this repo
+- For two people: **OneDrive** (or SharePoint library **Sync**) on both PCs
+
+---
+
+## 1. Install (once)
+
+```bat
+git clone https://github.com/chikku1234568/Bit.git
+cd Bit
 npm install
-cd web && npm install && cd ..
+cd web
+npm install
+cd ..
 ```
 
-Requires Node.js 18+.
+If the repo is already on disk, skip clone. From the folder that contains `package.json`:
 
-## Run locally
+```bat
+npm install
+cd web
+npm install
+cd ..
+```
 
-Terminal 1 — API (default `http://127.0.0.1:3001`, data in `./data`):
+---
 
-```bash
+## 2. Start Bit (every session)
+
+**Leave both processes running** while you use Excel. Closing those windows stops Bit.
+
+**Option A — Windows double-click**
+
+```bat
+scripts\start-bit.cmd
+```
+
+**Option B — two terminals** (from the repo root):
+
+Terminal 1 — agent:
+
+```bat
 npm run api
 ```
 
-Terminal 2 — Web UI (Vite, proxies `/api` → API):
+Terminal 2 — add-in page:
 
-```bash
+```bat
 npm run dev:web
 ```
 
-Open `http://127.0.0.1:5173`.
+You should see:
 
-### Demo flow
+| Process | URL |
+|--------|-----|
+| Agent | http://127.0.0.1:3001 |
+| Add-in (Excel loads this) | http://127.0.0.1:5173/addin.html |
+| Browser lab (optional) | http://127.0.0.1:5173 |
 
-1. Set **You are** in the top bar (stub author; no real auth in M2).
-2. **Create project** — name + upload `.xlsx` → Main version 1.
-3. Open the project — see Main tip and version history.
-4. **Create scenario**, then **Switch scenario**.
-5. Edit in Excel, **Save version** on the selected scenario (Main tip stays put).
-6. On a scenario, **Ask for review** → open Review → **Combine into Main** (resolve **Needs a decision** if any).
-7. **Download .xlsx** for the new Main tip.
+Check the agent: open http://127.0.0.1:3001/agent/status — you want `"ok": true`.
 
-Optional env:
+The Excel pane talks to the **agent on this PC**. A colleague cannot use your `localhost`. They start Bit on **their** machine.
 
-- `PORT` / `HOST` — API listen address
-- `BIT_DATA_DIR` — store root (default `./data`)
-- `VITE_API_BASE` — UI API prefix (default `/api` via Vite proxy)
+---
 
-### Auth (V0 stub)
+## 3. Sideload the Excel add-in (once per machine)
 
-No login. Author is taken from:
+Bit is **not** on the Office Store. **MY ADD-INS** will look empty. That is normal.
 
-1. `X-Bit-Author` request header, or
-2. multipart form field `author`, or
-3. default `demo-user`
+### If you have **Upload My Add-in**
 
-The UI stores the name in `localStorage` (`bit-author`). Two-person collab: same project folder (disk or SharePoint-synced); each person uses their own workbook. See docs/EXCEL-ADDIN.md.
+1. Start Bit ([§2](#2-start-bit-every-session)).
+2. Excel → **Insert** (or **Home**) → **Add-ins** → **My Add-ins**.
+3. **Upload My Add-in** → choose `addin\manifest.xml` in this repo.
+4. Home ribbon → **Bit** → task pane. Green **agent** pill = good.
 
-## Test
+### If you only see MY ADD-INS | STORE (typical on a personal Microsoft account)
 
-```bash
+Use a **Shared Folder** catalog:
+
+1. Excel → **File** → **Options** → **Trust Center** → **Trust Center Settings** → **Trusted Add-in Catalogs**.
+2. Catalog Url = a **network share** that contains `manifest.xml` (not a `C:\` path). On the machine that created the share this repo uses:
+
+   `\\YOUR-PC-NAME\BitAddin`
+
+   First time: right-click `scripts\share-addin-catalog.cmd` → **Run as administrator**, then use `\\%COMPUTERNAME%\BitAddin`.
+3. **Add catalog** → tick **Show in Menu** → OK. **Quit Excel fully** and reopen.
+4. Home → **Add-ins** → **SHARED FOLDER** (not Store) → **Refresh** → **Bit** → **Add**.
+
+Icons and the pane load from `http://127.0.0.1:5173`, so Bit must already be started.
+
+If the pane says **offline**, start the agent again and reopen **Bit** on the ribbon.
+
+---
+
+## 4. Collaborate (OneDrive/SharePoint)
+
+OneDrive does **not** install Bit. It only syncs the **project folder**. Each person: install Bit → start Bit → sideload → **Choose folder** → **Fetch**.
+
+### Person A (creates the project)
+
+1. In Explorer, create a folder inside OneDrive (or a synced SharePoint library), e.g.
+
+   `C:\Users\<you>\OneDrive\BitProjects`
+
+2. Share that folder (or the library) with Person B (**Can edit**). Wait until OneDrive shows a checkmark, not “processing”.
+3. Start Bit. Excel pane → **Choose folder** → that path (or **Open project** / paste path → **Use path**).
+4. **You are** → your name.
+5. Open *your* `.xlsx` → **Create project**.
+
+You should see `project.json`, `versions\`, and `blobs\` appear in that folder, then sync.
+
+### Person B (joins)
+
+1. OneDrive → **Shared** → **Sync** / **Add shortcut to My files** so the library is a normal folder. Their path will **not** match Person A’s (different `C:\Users\...`).
+2. Clone/install Bit, start Bit, sideload ([§1–3](#1-install-once)).
+3. Excel pane → **Choose folder** → *their* synced `BitProjects` path.
+4. **Fetch**.
+
+They should see Person A’s project and version graph.
+
+### Then they work
+
+| Button | Meaning |
+|--------|---------|
+| **Fetch** | Reload the graph from disk (after OneDrive sync). Does not open Excel files by itself. |
+| **Open** (History / Graph) | New workbook from that **version**. That file is *their* copy. Never writes into the other person’s open Excel. |
+| **Save version** | Snapshot the workbook they have **open** into the shared project. |
+| **What changed** | Main tip vs the selected version. |
+| **Make this Main** | Point Main at that version (whole snapshot). Teammates see it after **Fetch**. |
+
+If both Save on the same Main tip at once: one gets **409** — “Project was updated — Fetch and try again.” Fetch, then retry.
+
+**Do not** both edit the same live `.xlsx` in Excel co-authoring. Two files, one project folder.
+
+---
+
+## 5. How collaboration works
+
+```
+OneDrive / SharePoint folder     ←  the Bit project (graph + snapshots)
+        ▲
+        │  Fetch / Save version / Make this Main
+        │
+  A's Excel file              B's Excel file
+  (A's working copy)          (B's working copy)
+```
+
+1. **Fetch** = “show me what’s in the folder now.”
+2. Pick a node on the graph → **Open** = “give me a new workbook from that snapshot.”
+3. Edit only that workbook → **Save version** = “add my snapshot to the project.”
+4. **Make this Main** when the team wants that snapshot as official.
+
+Browser lab (no Excel pane): http://127.0.0.1:5173 after `npm run api` and `npm run dev:web`. Same agent, same folder. Useful if sideload fails.
+
+---
+
+## Tests
+
+```bat
 npm test
 ```
 
-Includes M1–M6: xlsx, versions, scenarios, diff, merge, and review/combine tests.
+---
 
-## Round-trip CLI (M1)
+## More docs
 
-```bash
-npm run roundtrip -- path/to/file.xlsx
+| Doc | What |
+|-----|------|
+| [docs/EXCEL-ADDIN.md](docs/EXCEL-ADDIN.md) | Add-in buttons, sideload, SharePoint notes |
+| [docs/FUNCTIONALITY.md](docs/FUNCTIONALITY.md) | What is saved vs not, how to use |
+| [docs/REPO-STRUCTURE.md](docs/REPO-STRUCTURE.md) | Where code lives |
+| [BIT-GUIDE.md](BIT-GUIDE.md) | Runbook |
+| [BIT-V0-DESIGN.md](BIT-V0-DESIGN.md) | Product decisions |
+
+### Fidelity (short)
+
+**Kept:** values, formulas, a lot of formatting and layout, hyperlinks, validation, names, comments, tables (for What changed).
+
+**Dropped on Open / rebuild:** charts, pivots, images, macros / `.xlsm`.
+
+### Layout
+
+```
+addin/manifest.xml   Excel sideload manifest
+src/xlsx/            parse/write snapshot
+src/store/           append-only project.json + versions/ + blobs/
+src/api/             agent (Fastify :3001)
+web/                 Vite UI + add-in task pane (:5173)
+scripts/start-bit.cmd
 ```
 
-## Layout
-
-```
-src/xlsx/          # M1 bridge — parse/write snapshot (do not reimplement)
-src/domain/        # Project, Version, Scenario (Main)
-src/store/         # Append-only store: project.json + versions/ + blobs/ + xlsx/
-src/service/       # ProjectService
-src/diff/          # Pure snapshot diff (M4)
-src/merge/         # Pure three-way merge (M5)
-src/api/           # Fastify HTTP API
-web/               # Vite + React UI (Home, Project)
-data/              # Runtime store (gitignored)
-fixtures/          # Sample budget workbook
-```
-
-## API (M6)
-
-| Method | Path | Purpose |
-|--------|------|---------|
-| GET | `/projects` | List projects |
-| POST | `/projects` | Create (multipart: `file`, `name`, `message`, `author`) |
-| GET | `/projects/:id` | Project + Main tip + scenarios |
-| GET | `/projects/:id/scenarios` | List scenarios (Main first) |
-| POST | `/projects/:id/scenarios` | Create scenario from Main tip (`{ name }`) |
-| GET | `/scenarios/:id` | Scenario metadata |
-| GET | `/projects/:id/versions` | Version history |
-| POST | `/projects/:id/versions` | Save version on Main |
-| POST | `/scenarios/:id/versions` | Save version on a scenario |
-| GET | `/versions/:id` | Version metadata |
-| GET | `/versions/:id/xlsx` | Download export |
-| POST | `/versions/:id/promote` | Make this Main (CAS Main tip) |
-| GET | `/diff?base=&compare=` | Cell/sheet diff between versions |
-| GET | `/merge?base=&ours=&theirs=` | Merge preview (conflicts, no write) |
-| POST | `/scenarios/:id/reviews` | Ask for review (freeze base/compare) |
-| GET | `/projects/:id/reviews` | List reviews |
-| GET | `/reviews/:id` | Review detail |
-| POST | `/reviews/:id/combine` | Combine into Main (resolutions) |
-| POST | `/reviews/:id/request-changes` | Request changes |
-| POST | `/reviews/:id/close` | Close review |
-
-## Fidelity bar (tracked)
-
-- Sheet names and order; hidden / very-hidden sheets; tab colour; freeze panes
-- Cell values (`v`) and formulas (`f`)
-- Formatting: bold, italic, underline, strike, font name/size, fill, font colour, number format, borders, alignment/wrap
-- Layout: column widths, row heights, hidden rows/cols, merged ranges
-- Theme and indexed colours resolved to `#RRGGBB` when Excel stores them that way
-- Cell hyperlink URL (What changed)
-- Data validation rules (What changed)
-- Named ranges / defined names (What changed)
-- Cell comments / notes (What changed)
-- Tables and sheet AutoFilter range (What changed)
-
-## Out of scope (later milestones)
-
-None for V0 core path — see docs/E2E-DEMO.md.
-
-## E2E demo
-
-See [`docs/E2E-DEMO.md`](docs/E2E-DEMO.md) (Alex / Jordan click path).
-
-## Design
-
-See `BIT-V0-DESIGN.md`. Practical guide: `BIT-GUIDE.md`.
+The agent remembers the last folder in `%USERPROFILE%\.bit\config.json`. Override with `BIT_DATA_DIR`.

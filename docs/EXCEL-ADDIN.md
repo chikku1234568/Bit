@@ -9,11 +9,17 @@ Windows Excel + a Bit **agent** on this PC. Storage is a **project folder** you 
 - Remote = the project store on disk (or synced). Not the workbook.
 - Collab V1: **Save version**, **Fetch**, **What changed**, **Make this Main**. No Git merge of workbooks in the ribbon.
 
+**Colleague on another PC:** OneDrive access is not enough. They clone this repo, run the same start commands, sideload the add-in, then **Choose folder** on *their* synced path and **Fetch**. Full command list: [README.md](../README.md).
+
 ## Run (every session)
 
-From the repo root:
+From the repo root (folder that contains `package.json`):
 
 ```bat
+npm install
+cd web
+npm install
+cd ..
 scripts\start-bit.cmd
 ```
 
@@ -39,7 +45,7 @@ Keep both running. The pane talks to the agent through Vite’s `/api` proxy.
 3. Choose `addin\manifest.xml` (this repo).
 4. Home ribbon → **Bit** group → **Bit** opens the task pane.
 
-If Upload is missing: File → Options → Trust Center → Trust Center Settings → **Trusted Add-in Catalogs** is the enterprise path; Upload My Add-in is enough for you.
+If **Upload My Add-in** is missing and **MY ADD-INS** is empty: that is the Office Store, not Bit. Use **File → Options → Trust Center → Trusted Add-in Catalogs**, add a **network share** that contains `manifest.xml` (see `scripts\share-addin-catalog.cmd`), tick **Show in Menu**, restart Excel, then **SHARED FOLDER → Refresh → Bit**. Details: [README.md §3](../README.md#3-sideload-the-excel-add-in-once-per-machine).
 
 First load of `office.js` uses Microsoft’s CDN. After that Excel caches it. Fully air-gapped Excel without that cache will not host the pane.
 
